@@ -426,7 +426,7 @@ class ProfileChainageDialog(QDialog):
             profile_id = self.table.item(row, COL_ID).text()
             step = self._row_number(row, COL_STEP)
             length_mark = self._row_number(row, COL_LMARK)
-            start_mark = self._row_number(row, COL_START)
+            start_mark = 0.0
 
             line_rb = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.LineGeometry)
             line_rb.setColor(QColor(31, 78, 121, 140))
