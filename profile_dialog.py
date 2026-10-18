@@ -21,6 +21,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from qgis.core import (
+    Qgis,
     QgsFeature,
     QgsMapLayerProxyModel,
     QgsField,
@@ -51,6 +52,17 @@ COL_REVERSE = 5
 
 ARROW_COUNT = 10
 PREVIEW_PROP = "pcm_preview"
+
+
+def _label_placement_over_point():
+    """Return LabelPlacement.OverPoint (not PredefinedPointPosition)."""
+    # QGIS 3.30+ / Qt6
+    if hasattr(Qgis, "LabelPlacement"):
+        return Qgis.LabelPlacement.OverPoint
+    # older bindings
+    if hasattr(QgsPalLayerSettings, "Placement"):
+        return QgsPalLayerSettings.Placement.OverPoint
+    return QgsPalLayerSettings.OverPoint
 
 
 class ProfileChainageDialog(QDialog):
@@ -488,7 +500,7 @@ class ProfileChainageDialog(QDialog):
         settings.fieldName = "profile_id"
         settings.enabled = True
         settings.setFormat(text)
-        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+        settings.placement = _label_placement_over_point()
         if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
             settings, "quadOffset"
         ):
@@ -532,7 +544,7 @@ class ProfileChainageDialog(QDialog):
         )
         settings.enabled = True
         settings.setFormat(text)
-        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+        settings.placement = _label_placement_over_point()
         if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
             settings, "quadOffset"
         ):
@@ -678,7 +690,7 @@ class ProfileChainageDialog(QDialog):
             'format_number(mark, 3))'
         )
         settings.enabled = True
-        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+        settings.placement = _label_placement_over_point()
         out_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         out_layer.setLabelsEnabled(True)
 
