@@ -31,6 +31,7 @@ from qgis.core import (
     QgsPalLayerSettings,
     QgsPointXY,
     QgsProject,
+    QgsProperty,
     QgsSingleSymbolRenderer,
     QgsTextBufferSettings,
     QgsTextFormat,
@@ -141,7 +142,7 @@ def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
 
 
 def _mark_label_settings():
-    """Mark labels centered directly below the point: Times New Roman 12, white halo."""
+    """Подписи mark рядом с точкой: сторона по lab_q (перпендикуляр линии)."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -166,23 +167,34 @@ def _mark_label_settings():
     settings.enabled = True
     settings.setFormat(text)
 
-    # Ровно снизу по центру: OverPoint + Below + вертикальный offset
     settings.placement = _label_placement_over_point()
     if hasattr(settings, "quadOffset"):
         if hasattr(Qgis, "LabelQuadrantPosition"):
-            settings.quadOffset = Qgis.LabelQuadrantPosition.Below
+            settings.quadOffset = Qgis.LabelQuadrantPosition.Above
         elif hasattr(QgsPalLayerSettings, "QuadrantPosition"):
-            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Below
+            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
 
     if hasattr(settings, "xOffset"):
         settings.xOffset = 0
-    # радиус точки + зазор, чтобы текст не наезжал на маркер
+    # расстояние от точки: радиус маркера + зазор
     if hasattr(settings, "yOffset"):
         settings.yOffset = POINT_SIZE_MM * 0.5 + 2.5
     if hasattr(settings, "offsetUnits"):
         settings.offsetUnits = QgsUnitTypes.RenderMillimeters
     if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
         settings.offsetType = QgsPalLayerSettings.FromPoint
+
+    # сторона из поля lab_q (считается по касательной линии)
+    prop_key = None
+    Property = getattr(QgsPalLayerSettings, "Property", None)
+    if Property is not None and hasattr(Property, "OffsetQuad"):
+        prop_key = Property.OffsetQuad
+    elif hasattr(QgsPalLayerSettings, "OffsetQuad"):
+        prop_key = QgsPalLayerSettings.OffsetQuad
+    if prop_key is not None:
+        props = settings.dataDefinedProperties()
+        props.setProperty(prop_key, QgsProperty.fromField("lab_q"))
+        settings.setDataDefinedProperties(props)
 
     return settings
 
@@ -522,6 +534,7 @@ class ProfileChainageDialog(QDialog):
                 QgsField("profile_id", QVariant.String),
                 QgsField("mark", QVariant.Double),
                 QgsField("seq", QVariant.Int),
+                QgsField("lab_q", QVariant.Int),
             ],
         )
 
@@ -776,6 +789,7 @@ class ProfileChainageDialog(QDialog):
         fields.append(QgsField("profile_id", QVariant.String))
         fields.append(QgsField("mark", QVariant.Double))
         fields.append(QgsField("seq", QVariant.Int))
+        fields.append(QgsField("lab_q", QVariant.Int))
 
         uri = f"Point?crs={crs.authid()}"
         out_layer = QgsVectorLayer(uri, "profile_marks", "memory")

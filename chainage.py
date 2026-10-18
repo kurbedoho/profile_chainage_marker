@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Расчёт точек разметки профиля."""
 
+import math
+
 from qgis.core import (
     QgsFeature,
     QgsGeometry,
@@ -9,6 +11,69 @@ from qgis.core import (
     QgsPointXY,
     QgsWkbTypes,
 )
+
+# Соответствует Qgis.LabelQuadrantPosition / QgsPalLayerSettings.QuadrantPosition
+LAB_Q_ABOVE_LEFT = 0
+LAB_Q_ABOVE = 1
+LAB_Q_ABOVE_RIGHT = 2
+LAB_Q_LEFT = 3
+LAB_Q_OVER = 4
+LAB_Q_RIGHT = 5
+LAB_Q_BELOW_LEFT = 6
+LAB_Q_BELOW = 7
+LAB_Q_BELOW_RIGHT = 8
+
+
+def _tangent_at(geom: QgsGeometry, distance: float):
+    """Касательный вектор линии в точке на расстоянии distance."""
+    length = geom.length()
+    if length <= 0:
+        return 0.0, 0.0
+    eps = max(length * 1e-4, 1e-6)
+    d0 = max(0.0, min(length, distance - eps))
+    d1 = max(0.0, min(length, distance + eps))
+    if d1 <= d0:
+        d0 = max(0.0, distance - eps)
+        d1 = min(length, d0 + eps)
+    p0 = geom.interpolate(d0)
+    p1 = geom.interpolate(d1)
+    if p0 is None or p1 is None or p0.isEmpty() or p1.isEmpty():
+        return 0.0, 0.0
+    a = p0.asPoint()
+    b = p1.asPoint()
+    return b.x() - a.x(), b.y() - a.y()
+
+
+def label_quadrant_for_tangent(dx: float, dy: float) -> int:
+    """
+    Квадрант подписи перпендикулярно линии, чтобы не ложилась на линию.
+    При равных вариантах предпочитаем вверх, затем влево.
+    """
+    length = math.hypot(dx, dy)
+    if length < 1e-12:
+        return LAB_Q_ABOVE
+    dx /= length
+    dy /= length
+    # два перпендикуляра
+    candidates = ((-dy, dx), (dy, -dx))
+
+    def score(nx, ny):
+        return ny * 2.0 - nx
+
+    nx, ny = max(candidates, key=lambda v: score(v[0], v[1]))
+
+    ax, ay = abs(nx), abs(ny)
+    if ay >= ax * 1.2:
+        return LAB_Q_ABOVE if ny > 0 else LAB_Q_BELOW
+    if ax >= ay * 1.2:
+        return LAB_Q_LEFT if nx < 0 else LAB_Q_RIGHT
+    if ny > 0 and nx < 0:
+        return LAB_Q_ABOVE_LEFT
+    if ny > 0 and nx >= 0:
+        return LAB_Q_ABOVE_RIGHT
+    if ny <= 0 and nx < 0:
+        return LAB_Q_BELOW_LEFT
+    return LAB_Q_BELOW_RIGHT
 
 
 def as_single_line(geometry):
@@ -202,8 +267,10 @@ def build_point_features(
     stations = _merge_mark_stations(stations, tol_fraction=1e-9)
 
     features = []
+    has_lab_q = fields.indexFromName("lab_q") >= 0
     for seq, (fraction, mark) in enumerate(stations):
-        point_geom = geom.interpolate(fraction * real_length)
+        distance = fraction * real_length
+        point_geom = geom.interpolate(distance)
         if point_geom is None or point_geom.isEmpty():
             continue
 
@@ -212,5 +279,8 @@ def build_point_features(
         feat.setAttribute("profile_id", profile_id)
         feat.setAttribute("mark", mark)
         feat.setAttribute("seq", seq)
+        if has_lab_q:
+            dx, dy = _tangent_at(geom, distance)
+            feat.setAttribute("lab_q", label_quadrant_for_tangent(dx, dy))
         features.append(feat)
     return features
