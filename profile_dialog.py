@@ -84,10 +84,8 @@ class ProfileChainageDialog(QDialog):
         source_layout = QHBoxLayout(source_box)
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.LineLayer)
-        try:
+        if hasattr(self.layer_combo, "setAllowEmptyLayer"):
             self.layer_combo.setAllowEmptyLayer(True)
-        except Exception:
-            pass
         source_layout.addWidget(QLabel("Слой:"))
         source_layout.addWidget(self.layer_combo, 1)
         root.addWidget(source_box)
@@ -181,10 +179,13 @@ class ProfileChainageDialog(QDialog):
     def _remove_canvas_item(self, item):
         if item is None:
             return
-        try:
-            self.canvas.scene().removeItem(item)
-        except Exception:
-            pass
+        scene = self.canvas.scene()
+        if scene is None or not hasattr(scene, "removeItem"):
+            return
+        # only remove if the item is still attached to a scene
+        item_scene = item.scene() if hasattr(item, "scene") else None
+        if item_scene is not None:
+            scene.removeItem(item)
 
     def _remove_preview_layers(self):
         project = QgsProject.instance()
@@ -490,12 +491,14 @@ class ProfileChainageDialog(QDialog):
             settings.placement = QgsPalLayerSettings.Placement.OverPoint
         except AttributeError:
             settings.placement = QgsPalLayerSettings.OverPoint
-        try:
+        if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
+            settings, "quadOffset"
+        ):
             settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.AboveRight
+        if hasattr(settings, "xOffset"):
             settings.xOffset = 2
+        if hasattr(settings, "yOffset"):
             settings.yOffset = 2
-        except Exception:
-            pass
 
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(True)
@@ -535,11 +538,12 @@ class ProfileChainageDialog(QDialog):
             settings.placement = QgsPalLayerSettings.Placement.OverPoint
         except AttributeError:
             settings.placement = QgsPalLayerSettings.OverPoint
-        try:
+        if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
+            settings, "quadOffset"
+        ):
             settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Below
+        if hasattr(settings, "yOffset"):
             settings.yOffset = 2
-        except Exception:
-            pass
 
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(True)
