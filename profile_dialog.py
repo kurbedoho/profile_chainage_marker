@@ -75,6 +75,7 @@ class ProfileChainageDialog(QDialog):
 
         self.rubber_lines = []
         self.rubber_arrows = None
+        self.rubber_start_back = None  # стрелки у старта против хода профиля
         self.markers_start = []
         self.markers_end = []
 
@@ -230,6 +231,11 @@ class ProfileChainageDialog(QDialog):
             self._remove_canvas_item(self.rubber_arrows)
             self.rubber_arrows = None
 
+        if self.rubber_start_back is not None:
+            self.rubber_start_back.reset(QgsWkbTypes.GeometryType.LineGeometry)
+            self._remove_canvas_item(self.rubber_start_back)
+            self.rubber_start_back = None
+
         for m in self.markers_start + self.markers_end:
             m.hide()
             self._remove_canvas_item(m)
@@ -384,8 +390,14 @@ class ProfileChainageDialog(QDialog):
 
         crs = self.source_layer.crs()
         self.rubber_arrows = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.LineGeometry)
-        self.rubber_arrows.setColor(QColor(231, 76, 60, 230))
-        self.rubber_arrows.setWidth(2)
+        self.rubber_arrows.setColor(QColor(231, 76, 60, 255))
+        self.rubber_arrows.setWidth(3)
+
+        self.rubber_start_back = QgsRubberBand(
+            self.canvas, QgsWkbTypes.GeometryType.LineGeometry
+        )
+        self.rubber_start_back.setColor(QColor(0, 140, 60, 255))
+        self.rubber_start_back.setWidth(4)
 
         id_layer = self._make_memory_point_layer(
             "превью ID профилей",
@@ -428,25 +440,40 @@ class ProfileChainageDialog(QDialog):
             length_mark = self._row_number(row, COL_LMARK)
             start_mark = 0.0
 
+            # линия профиля — толстая и непрозрачная, чтобы всегда читалась
             line_rb = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.LineGeometry)
-            line_rb.setColor(QColor(31, 78, 121, 140))
-            line_rb.setWidth(2)
+            line_rb.setColor(QColor(20, 90, 200, 255))
+            line_rb.setWidth(5)
             line_rb.setToGeometry(draw_geom, self.source_layer)
+            if hasattr(line_rb, "setZValue"):
+                line_rb.setZValue(10)
             self.rubber_lines.append(line_rb)
 
             start_pt = draw_geom.interpolate(0.0)
             end_pt = draw_geom.interpolate(length)
+            fwd = self._forward_unit(draw_geom, length)
             if not start_pt.isEmpty():
+                sp = start_pt.asPoint()
                 self.markers_start.append(
-                    self._make_marker(start_pt.asPoint(), QColor(39, 174, 96))
+                    self._make_marker(sp, QColor(39, 174, 96), size=16)
                 )
+                # ID и «обратная» стрелка — всегда против хода профиля
+                if fwd is not None:
+                    back_arrow = self._start_back_arrow(sp, fwd)
+                    if back_arrow is not None:
+                        self.rubber_start_back.addGeometry(
+                            back_arrow, self.source_layer
+                        )
+                    id_geom = self._id_label_point(sp, fwd)
+                else:
+                    id_geom = start_pt
                 id_feat = QgsFeature(id_layer.fields())
-                id_feat.setGeometry(start_pt)
+                id_feat.setGeometry(id_geom)
                 id_feat.setAttribute("profile_id", profile_id)
                 id_features.append(id_feat)
             if not end_pt.isEmpty():
                 self.markers_end.append(
-                    self._make_marker(end_pt.asPoint(), QColor(231, 76, 60))
+                    self._make_marker(end_pt.asPoint(), QColor(231, 76, 60), size=14)
                 )
 
             for arrow_geom in self._arrows_along_line(draw_geom, ARROW_COUNT):
@@ -500,13 +527,13 @@ class ProfileChainageDialog(QDialog):
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
 
         text = QgsTextFormat()
-        text.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        text.setSize(11)
-        text.setColor(QColor(20, 90, 50))
+        text.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        text.setSize(12)
+        text.setColor(QColor(10, 90, 40))
         buf = QgsTextBufferSettings()
         buf.setEnabled(True)
-        buf.setSize(1.2)
-        buf.setColor(QColor(255, 255, 255, 230))
+        buf.setSize(1.6)
+        buf.setColor(QColor(255, 255, 255, 240))
         text.setBuffer(buf)
 
         settings = QgsPalLayerSettings()
@@ -514,14 +541,11 @@ class ProfileChainageDialog(QDialog):
         settings.enabled = True
         settings.setFormat(text)
         settings.placement = _label_placement_over_point()
-        if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
-            settings, "quadOffset"
-        ):
-            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.AboveRight
+        # геометрия уже смещена против хода — подпись прямо на точке
         if hasattr(settings, "xOffset"):
-            settings.xOffset = 2
+            settings.xOffset = 0
         if hasattr(settings, "yOffset"):
-            settings.yOffset = 2
+            settings.yOffset = 0
 
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(True)
@@ -568,16 +592,62 @@ class ProfileChainageDialog(QDialog):
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(True)
 
-    def _make_marker(self, point, color: QColor) -> QgsVertexMarker:
+    def _make_marker(self, point, color: QColor, size: int = 12) -> QgsVertexMarker:
         marker = QgsVertexMarker(self.canvas)
         marker.setColor(color)
         marker.setFillColor(color)
-        marker.setIconSize(10)
+        marker.setIconSize(size)
         marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
-        marker.setPenWidth(2)
+        marker.setPenWidth(3)
         marker.setCenter(QgsPointXY(point))
+        if hasattr(marker, "setZValue"):
+            marker.setZValue(20)
         marker.show()
         return marker
+
+    def _forward_unit(self, geom: QgsGeometry, length: float):
+        """Единичный вектор направления профиля у начала линии."""
+        if length <= 0:
+            return None
+        mupp = max(self.canvas.mapUnitsPerPixel(), 1e-12)
+        sample = min(max(mupp * 12.0, length * 1e-4), length * 0.25)
+        g0 = geom.interpolate(0.0)
+        g1 = geom.interpolate(sample)
+        if g0.isEmpty() or g1.isEmpty():
+            return None
+        p0 = g0.asPoint()
+        p1 = g1.asPoint()
+        dx = p1.x() - p0.x()
+        dy = p1.y() - p0.y()
+        hyp = math.hypot(dx, dy)
+        if hyp < 1e-12:
+            return None
+        return (dx / hyp, dy / hyp)
+
+    def _id_label_point(self, start_pt, forward_unit):
+        """Точка для подписи ID — смещение против хода профиля."""
+        mupp = max(self.canvas.mapUnitsPerPixel(), 1e-12)
+        offset = mupp * 36.0  # ~36 px от старта назад
+        ux, uy = forward_unit
+        return QgsGeometry.fromPointXY(
+            QgsPointXY(start_pt.x() - ux * offset, start_pt.y() - uy * offset)
+        )
+
+    def _start_back_arrow(self, start_pt, forward_unit):
+        """Стрелка у старта, направленная против движения профиля."""
+        mupp = max(self.canvas.mapUnitsPerPixel(), 1e-12)
+        arrow_len = mupp * 28.0
+        ux, uy = forward_unit
+        # против хода: от старта назад
+        tip = QgsPointXY(start_pt.x() - ux * arrow_len, start_pt.y() - uy * arrow_len)
+        tail = QgsPointXY(start_pt.x(), start_pt.y())
+        # наконечник смотрит в сторону tip (против профиля)
+        return self._arrow_head_geometry(
+            tail,
+            tip,
+            tip,
+            arrow_len * 0.55,
+        )
 
     def _arrows_along_line(self, geom: QgsGeometry, count: int):
         length = geom.length()
