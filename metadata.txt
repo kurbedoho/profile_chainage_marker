@@ -1,4 +1,4 @@
-﻿[general]
+[general]
 name=Profile Chainage Marker
 qgisMinimumVersion=3.28
 qgisMaximumVersion=3.99
