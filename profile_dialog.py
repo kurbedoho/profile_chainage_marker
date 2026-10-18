@@ -141,7 +141,7 @@ def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
 
 
 def _mark_label_settings():
-    """Mark labels fully above the point: Times New Roman 12, white halo."""
+    """Mark labels centered directly above the point: Times New Roman 12, white halo."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -166,34 +166,9 @@ def _mark_label_settings():
     settings.enabled = True
     settings.setFormat(text)
 
-    # AroundPoint + dist: подпись с зазором от маркера, не наезжает на точку
-    # (радиус маркера + небольшой отступ)
-    label_dist_mm = POINT_SIZE_MM * 0.5 + 1.8
-
-    around = None
-    if hasattr(Qgis, "LabelPlacement") and hasattr(Qgis.LabelPlacement, "AroundPoint"):
-        around = Qgis.LabelPlacement.AroundPoint
-    elif hasattr(QgsPalLayerSettings, "Placement") and hasattr(
-        QgsPalLayerSettings.Placement, "AroundPoint"
-    ):
-        around = QgsPalLayerSettings.Placement.AroundPoint
-
-    if around is not None:
-        settings.placement = around
-        if hasattr(settings, "dist"):
-            settings.dist = label_dist_mm
-        if hasattr(settings, "distUnits"):
-            settings.distUnits = QgsUnitTypes.RenderMillimeters
-        if hasattr(settings, "distMax"):
-            settings.distMax = label_dist_mm
-    else:
-        settings.placement = _label_placement_over_point()
-        if hasattr(settings, "yOffset"):
-            settings.yOffset = label_dist_mm
-        if hasattr(settings, "offsetUnits"):
-            settings.offsetUnits = QgsUnitTypes.RenderMillimeters
-
-    # предпочитать верхнюю позицию
+    # Ровно сверху по центру: OverPoint + Above + вертикальный offset
+    # (AroundPoint уводил подписи вбок)
+    settings.placement = _label_placement_over_point()
     if hasattr(settings, "quadOffset"):
         if hasattr(Qgis, "LabelQuadrantPosition"):
             settings.quadOffset = Qgis.LabelQuadrantPosition.Above
@@ -202,11 +177,20 @@ def _mark_label_settings():
 
     if hasattr(settings, "xOffset"):
         settings.xOffset = 0
+    # радиус точки + зазор, чтобы не наезжать и не уезжать вбок
+    if hasattr(settings, "yOffset"):
+        settings.yOffset = POINT_SIZE_MM * 0.5 + 2.2
+    if hasattr(settings, "offsetUnits"):
+        settings.offsetUnits = QgsUnitTypes.RenderMillimeters
     if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
         settings.offsetType = QgsPalLayerSettings.FromPoint
 
-    # токен для Qt6-чекера plugins.qgis.org
-    _ = _label_placement_over_point()
+    # не разрешать двигать подпись в сторону при конфликтах
+    if hasattr(settings, "centroidWhole"):
+        settings.centroidWhole = True
+    if hasattr(settings, "fitInPolygonOnly"):
+        settings.fitInPolygonOnly = False
+
     return settings
 
 
