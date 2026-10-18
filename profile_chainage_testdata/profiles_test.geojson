@@ -1,0 +1,120 @@
+{
+  "type": "FeatureCollection",
+  "name": "profiles_test",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::32637"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "ID": 1,
+        "len_m": 1187.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            500000.0,
+            4500000.0
+          ],
+          [
+            501187.0,
+            4500000.0
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ID": 2,
+        "len_m": 1000.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            500000.0,
+            4500100.0
+          ],
+          [
+            501000.0,
+            4500100.0
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ID": 3,
+        "len_m": 35.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            500000.0,
+            4500200.0
+          ],
+          [
+            500035.0,
+            4500200.0
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ID": 4,
+        "len_m": 500.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            500500.0,
+            4500300.0
+          ],
+          [
+            500000.0,
+            4500300.0
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ID": 5,
+        "len_m": 700.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            500000.0,
+            4500400.0
+          ],
+          [
+            500300.0,
+            4500400.0
+          ],
+          [
+            500300.0,
+            4500600.0
+          ],
+          [
+            500500.0,
+            4500600.0
+          ]
+        ]
+      }
+    }
+  ]
+}

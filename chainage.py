@@ -10,8 +10,6 @@ from qgis.core import (
     QgsWkbTypes,
 )
 
-from .qt_compat import LineGeometry
-
 
 def as_single_line(geometry):
     """Вернуть одну линию (для multipart — самая длинная часть)."""
@@ -24,7 +22,7 @@ def as_single_line(geometry):
         best = None
         best_len = -1.0
         for part in parts:
-            if part.type() != LineGeometry:
+            if part.type() != QgsWkbTypes.GeometryType.LineGeometry:
                 continue
             length = part.length()
             if length > best_len:
@@ -32,7 +30,7 @@ def as_single_line(geometry):
                 best = part
         return QgsGeometry(best) if best is not None else None
 
-    if geom.type() != LineGeometry:
+    if geom.type() != QgsWkbTypes.GeometryType.LineGeometry:
         return None
     return geom
 

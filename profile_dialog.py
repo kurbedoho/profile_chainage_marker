@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 import math
 
-from qgis.PyQt.QtCore import QTimer, QVariant
+from qgis.PyQt.QtCore import Qt, QTimer, QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -20,6 +22,7 @@ from qgis.PyQt.QtWidgets import (
 
 from qgis.core import (
     QgsFeature,
+    QgsMapLayerProxyModel,
     QgsField,
     QgsFields,
     QgsGeometry,
@@ -32,28 +35,11 @@ from qgis.core import (
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
+    QgsWkbTypes,
 )
 from qgis.gui import QgsMapLayerComboBox, QgsRubberBand, QgsVertexMarker
 
 from .chainage import as_single_line, build_point_features, reversed_line
-from .qt_compat import (
-    Checked,
-    FontBold,
-    HeaderResizeToContents,
-    HeaderStretch,
-    ItemIsEditable,
-    ItemIsEnabled,
-    ItemIsSelectable,
-    ItemIsUserCheckable,
-    LineGeometry,
-    LineLayerFilter,
-    SelectRows,
-    SingleSelection,
-    Unchecked,
-    UserRole,
-    VertexIconCircle,
-    pal_over_point,
-)
 
 
 COL_ID = 0
@@ -98,7 +84,7 @@ class ProfileChainageDialog(QDialog):
         source_box = QGroupBox("Исходные линии")
         source_layout = QHBoxLayout(source_box)
         self.layer_combo = QgsMapLayerComboBox()
-        self.layer_combo.setFilters(LineLayerFilter)
+        self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.LineLayer)
         if hasattr(self.layer_combo, "setAllowEmptyLayer"):
             self.layer_combo.setAllowEmptyLayer(True)
         source_layout.addWidget(QLabel("Слой:"))
@@ -144,10 +130,10 @@ class ProfileChainageDialog(QDialog):
         )
         self.table.verticalHeader().setVisible(False)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(HeaderStretch)
-        header.setSectionResizeMode(COL_REVERSE, HeaderResizeToContents)
-        self.table.setSelectionBehavior(SelectRows)
-        self.table.setSelectionMode(SingleSelection)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(COL_REVERSE, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
         root.addWidget(self.table, 1)
 
@@ -216,12 +202,12 @@ class ProfileChainageDialog(QDialog):
         self._remove_preview_layers()
 
         for rb in self.rubber_lines:
-            rb.reset(LineGeometry)
+            rb.reset(QgsWkbTypes.GeometryType.LineGeometry)
             self._remove_canvas_item(rb)
         self.rubber_lines = []
 
         if self.rubber_arrows is not None:
-            self.rubber_arrows.reset(LineGeometry)
+            self.rubber_arrows.reset(QgsWkbTypes.GeometryType.LineGeometry)
             self._remove_canvas_item(self.rubber_arrows)
             self.rubber_arrows = None
 
@@ -287,12 +273,12 @@ class ProfileChainageDialog(QDialog):
             self.feature_by_row[row] = feat.id()
 
             item_id = QTableWidgetItem(str(profile_id))
-            item_id.setFlags(item_id.flags() & ~ItemIsEditable)
+            item_id.setFlags(item_id.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, COL_ID, item_id)
 
             item_real = QTableWidgetItem(f"{real_len:.3f}")
-            item_real.setFlags(item_real.flags() & ~ItemIsEditable)
-            item_real.setData(UserRole, real_len)
+            item_real.setFlags(item_real.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            item_real.setData(Qt.ItemDataRole.UserRole, real_len)
             self.table.setItem(row, COL_REAL, item_real)
 
             default_lmark = float(round(real_len))
@@ -301,8 +287,8 @@ class ProfileChainageDialog(QDialog):
             self.table.setItem(row, COL_START, self._number_item(start))
 
             chk = QTableWidgetItem()
-            chk.setFlags(ItemIsUserCheckable | ItemIsEnabled | ItemIsSelectable)
-            chk.setCheckState(Unchecked)
+            chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            chk.setCheckState(Qt.CheckState.Unchecked)
             self.table.setItem(row, COL_REVERSE, chk)
             row += 1
 
@@ -315,7 +301,7 @@ class ProfileChainageDialog(QDialog):
     @staticmethod
     def _number_item(value: float) -> QTableWidgetItem:
         item = QTableWidgetItem(f"{value:g}")
-        item.setData(UserRole, float(value))
+        item.setData(Qt.ItemDataRole.UserRole, float(value))
         return item
 
     def apply_defaults_to_table(self):
@@ -340,22 +326,22 @@ class ProfileChainageDialog(QDialog):
             try:
                 value = float(item.text().replace(",", "."))
             except ValueError:
-                value = float(item.data(UserRole) or 0)
+                value = float(item.data(Qt.ItemDataRole.UserRole) or 0)
                 self.table.blockSignals(True)
                 item.setText(f"{value:g}")
                 self.table.blockSignals(False)
-            item.setData(UserRole, value)
+            item.setData(Qt.ItemDataRole.UserRole, value)
             self.schedule_preview_refresh()
 
     def _row_reverse(self, row: int) -> bool:
         item = self.table.item(row, COL_REVERSE)
-        return item is not None and item.checkState() == Checked
+        return item is not None and item.checkState() == Qt.CheckState.Checked
 
     def _row_number(self, row: int, column: int) -> float:
         item = self.table.item(row, column)
         if item is None:
             return 0.0
-        data = item.data(UserRole)
+        data = item.data(Qt.ItemDataRole.UserRole)
         if data is not None:
             try:
                 return float(data)
@@ -372,7 +358,7 @@ class ProfileChainageDialog(QDialog):
             return
 
         crs = self.source_layer.crs()
-        self.rubber_arrows = QgsRubberBand(self.canvas, LineGeometry)
+        self.rubber_arrows = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.LineGeometry)
         self.rubber_arrows.setColor(QColor(231, 76, 60, 230))
         self.rubber_arrows.setWidth(2)
 
@@ -417,7 +403,7 @@ class ProfileChainageDialog(QDialog):
             length_mark = self._row_number(row, COL_LMARK)
             start_mark = self._row_number(row, COL_START)
 
-            line_rb = QgsRubberBand(self.canvas, LineGeometry)
+            line_rb = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.LineGeometry)
             line_rb.setColor(QColor(31, 78, 121, 140))
             line_rb.setWidth(2)
             line_rb.setToGeometry(draw_geom, self.source_layer)
@@ -489,7 +475,7 @@ class ProfileChainageDialog(QDialog):
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
 
         text = QgsTextFormat()
-        text.setFont(QFont("Arial", 11, FontBold))
+        text.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         text.setSize(11)
         text.setColor(QColor(20, 90, 50))
         buf = QgsTextBufferSettings()
@@ -502,7 +488,7 @@ class ProfileChainageDialog(QDialog):
         settings.fieldName = "profile_id"
         settings.enabled = True
         settings.setFormat(text)
-        settings.placement = pal_over_point()
+        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
         if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
             settings, "quadOffset"
         ):
@@ -546,7 +532,7 @@ class ProfileChainageDialog(QDialog):
         )
         settings.enabled = True
         settings.setFormat(text)
-        settings.placement = pal_over_point()
+        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
         if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
             settings, "quadOffset"
         ):
@@ -562,7 +548,7 @@ class ProfileChainageDialog(QDialog):
         marker.setColor(color)
         marker.setFillColor(color)
         marker.setIconSize(10)
-        marker.setIconType(VertexIconCircle)
+        marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
         marker.setPenWidth(2)
         marker.setCenter(QgsPointXY(point))
         marker.show()
@@ -692,7 +678,7 @@ class ProfileChainageDialog(QDialog):
             'format_number(mark, 3))'
         )
         settings.enabled = True
-        settings.placement = pal_over_point()
+        settings.placement = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
         out_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         out_layer.setLabelsEnabled(True)
 
