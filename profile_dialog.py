@@ -47,8 +47,7 @@ COL_ID = 0
 COL_REAL = 1
 COL_STEP = 2
 COL_LMARK = 3
-COL_START = 4
-COL_REVERSE = 5
+COL_REVERSE = 4
 
 ARROW_COUNT = 10
 PREVIEW_PROP = "pcm_preview"
@@ -83,9 +82,25 @@ class ProfileChainageDialog(QDialog):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(120)
         self._preview_timer.timeout.connect(self.refresh_map_preview)
+        self._ui_ready = False
 
         self._build_ui()
         self.clear_map_preview()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # после показа окна — подхватить уже выбранный слой
+        # (при создании диалога combo иногда ещё пустой)
+        QTimer.singleShot(0, self._load_current_layer)
+
+    def _load_current_layer(self):
+        layer = self.layer_combo.currentLayer()
+        if layer is None:
+            return
+        if self.source_layer is not layer or self.table.rowCount() == 0:
+            self.populate_table(layer)
+        else:
+            self.refresh_map_preview()
 
     def _build_ui(self):
         self.setWindowTitle("Разметка профилей")
@@ -97,8 +112,9 @@ class ProfileChainageDialog(QDialog):
         source_layout = QHBoxLayout(source_box)
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.LineLayer)
+        # не оставлять пустой выбор — иначе слой «есть», а таблица пустая
         if hasattr(self.layer_combo, "setAllowEmptyLayer"):
-            self.layer_combo.setAllowEmptyLayer(True)
+            self.layer_combo.setAllowEmptyLayer(False)
         source_layout.addWidget(QLabel("Слой:"))
         source_layout.addWidget(self.layer_combo, 1)
         root.addWidget(source_box)
@@ -108,35 +124,30 @@ class ProfileChainageDialog(QDialog):
         self.spin_step = QDoubleSpinBox()
         self.spin_step.setDecimals(3)
         self.spin_step.setRange(0.001, 1_000_000)
-        self.spin_step.setValue(10.0)
-        self.spin_start = QDoubleSpinBox()
-        self.spin_start.setDecimals(3)
-        self.spin_start.setRange(-1_000_000_000, 1_000_000_000)
-        self.spin_start.setValue(0.0)
+        self.spin_step.setValue(100.0)
         form.addRow("Шаг разметки:", self.spin_step)
-        form.addRow("Старт подписи (0-отметка):", self.spin_start)
-
-        self.chk_bends = QCheckBox("Ставить точки на изгибах")
-        self.chk_bends.setToolTip(
-            "Дополнительные точки на промежуточных вершинах линии. "
-            "Отметка считается по доле длины и масштабируется "
-            "в диапазон «Старт … Старт + Длина разметки» "
-            "(например линия от 100 до 200, изгиб посередине → 150)."
-        )
-        form.addRow(self.chk_bends)
-
-        btn_apply_defaults = QPushButton("Применить шаг и старт ко всем строкам")
+        btn_apply_defaults = QPushButton("Применить шаг ко всем строкам")
         form.addRow(btn_apply_defaults)
         root.addWidget(defaults_box)
 
-        self.table = QTableWidget(0, 6)
+        options_box = QGroupBox("Опции разметки")
+        options_layout = QVBoxLayout(options_box)
+        self.chk_bends = QCheckBox("Ставить точки на изгибах")
+        self.chk_bends.setToolTip(
+            "Дополнительные точки на промежуточных вершинах линии. "
+            "Отметка масштабируется под «Длину разметки» "
+            "(например разметка 0…200, изгиб посередине → 100)."
+        )
+        options_layout.addWidget(self.chk_bends)
+        root.addWidget(options_box)
+
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
             [
                 "ID",
                 "Реальная длина",
                 "Шаг",
                 "Длина разметки",
-                "Старт",
                 "Развернуть",
             ]
         )
@@ -150,9 +161,8 @@ class ProfileChainageDialog(QDialog):
         root.addWidget(self.table, 1)
 
         hint = QLabel(
-            "На карте сразу: ID у начала профиля, стрелки направления, "
-            "превью точек разметки с подписями mark. "
-            "Меняете шаг/длину/разворот — превью обновляется. "
+            "На карте: ID у начала профиля, стрелки направления, "
+            "превью точек с подписями mark (старт всегда 0). "
             "Исходный слой не меняется."
         )
         hint.setWordWrap(True)
@@ -173,10 +183,7 @@ class ProfileChainageDialog(QDialog):
         self.layer_combo.layerChanged.connect(self.on_layer_changed)
         self.table.cellChanged.connect(self.on_cell_changed)
         self.chk_bends.toggled.connect(self.schedule_preview_refresh)
-
-        current = self.layer_combo.currentLayer()
-        if current is not None:
-            self.populate_table(current)
+        self._ui_ready = True
 
     def schedule_preview_refresh(self):
         self._preview_timer.start()
@@ -271,7 +278,6 @@ class ProfileChainageDialog(QDialog):
             return
 
         step = self.spin_step.value()
-        start = self.spin_start.value()
 
         row = 0
         for feat in layer.getFeatures():
@@ -296,7 +302,6 @@ class ProfileChainageDialog(QDialog):
             default_lmark = float(round(real_len))
             self.table.setItem(row, COL_STEP, self._number_item(step))
             self.table.setItem(row, COL_LMARK, self._number_item(default_lmark))
-            self.table.setItem(row, COL_START, self._number_item(start))
 
             chk = QTableWidgetItem()
             chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
@@ -308,7 +313,17 @@ class ProfileChainageDialog(QDialog):
         if self.table.rowCount() == 0:
             QMessageBox.information(self, "Данные", "В слое нет линейных объектов.")
         else:
+            self._zoom_to_source_layer()
             self.refresh_map_preview()
+
+    def _zoom_to_source_layer(self):
+        if self.source_layer is None:
+            return
+        extent = self.source_layer.extent()
+        if extent is None or extent.isEmpty():
+            return
+        self.canvas.setExtent(extent)
+        self.canvas.refresh()
 
     @staticmethod
     def _number_item(value: float) -> QTableWidgetItem:
@@ -321,17 +336,15 @@ class ProfileChainageDialog(QDialog):
             return
         self.table.blockSignals(True)
         step = self.spin_step.value()
-        start = self.spin_start.value()
         for row in range(self.table.rowCount()):
             self.table.setItem(row, COL_STEP, self._number_item(step))
-            self.table.setItem(row, COL_START, self._number_item(start))
         self.table.blockSignals(False)
         self.refresh_map_preview()
 
     def on_cell_changed(self, row, column):
         if column == COL_REVERSE:
             self.schedule_preview_refresh()
-        elif column in (COL_STEP, COL_LMARK, COL_START):
+        elif column in (COL_STEP, COL_LMARK):
             item = self.table.item(row, column)
             if item is None:
                 return
@@ -653,7 +666,7 @@ class ProfileChainageDialog(QDialog):
             reverse = self._row_reverse(row)
             step = self._row_number(row, COL_STEP)
             length_mark = self._row_number(row, COL_LMARK)
-            start_mark = self._row_number(row, COL_START)
+            start_mark = 0.0
             profile_id = self.table.item(row, COL_ID).text()
 
             if step <= 0:
