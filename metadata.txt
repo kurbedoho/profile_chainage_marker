@@ -1,5 +1,5 @@
 [general]
-name=Profile Chainage Marker 1.5.0 (18.10.2026)
+name=Profile Chainage Marker
 qgisMinimumVersion=3.28
 qgisMaximumVersion=3.99
 description=Mark chainage points along profile lines with scaled labels, direction preview and optional bend points
