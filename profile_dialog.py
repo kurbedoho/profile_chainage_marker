@@ -141,7 +141,7 @@ def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
 
 
 def _mark_label_settings():
-    """Mark labels centered directly above the point: Times New Roman 12, white halo."""
+    """Mark labels centered directly below the point: Times New Roman 12, white halo."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -166,30 +166,23 @@ def _mark_label_settings():
     settings.enabled = True
     settings.setFormat(text)
 
-    # Ровно сверху по центру: OverPoint + Above + вертикальный offset
-    # (AroundPoint уводил подписи вбок)
+    # Ровно снизу по центру: OverPoint + Below + вертикальный offset
     settings.placement = _label_placement_over_point()
     if hasattr(settings, "quadOffset"):
         if hasattr(Qgis, "LabelQuadrantPosition"):
-            settings.quadOffset = Qgis.LabelQuadrantPosition.Above
+            settings.quadOffset = Qgis.LabelQuadrantPosition.Below
         elif hasattr(QgsPalLayerSettings, "QuadrantPosition"):
-            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
+            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Below
 
     if hasattr(settings, "xOffset"):
         settings.xOffset = 0
-    # радиус точки + зазор, чтобы не наезжать и не уезжать вбок
+    # радиус точки + зазор, чтобы текст не наезжал на маркер
     if hasattr(settings, "yOffset"):
-        settings.yOffset = POINT_SIZE_MM * 0.5 + 2.2
+        settings.yOffset = POINT_SIZE_MM * 0.5 + 2.5
     if hasattr(settings, "offsetUnits"):
         settings.offsetUnits = QgsUnitTypes.RenderMillimeters
     if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
         settings.offsetType = QgsPalLayerSettings.FromPoint
-
-    # не разрешать двигать подпись в сторону при конфликтах
-    if hasattr(settings, "centroidWhole"):
-        settings.centroidWhole = True
-    if hasattr(settings, "fitInPolygonOnly"):
-        settings.fitInPolygonOnly = False
 
     return settings
 
