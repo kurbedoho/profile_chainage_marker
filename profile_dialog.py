@@ -76,8 +76,72 @@ def _label_placement_over_point():
     return getattr(Qgis.LabelPlacement, "OverPoint")
 
 
+POINT_SIZE_MM = 3.2
+
+
+def _source_line_color(layer: QgsVectorLayer) -> QColor:
+    """Цвет линии из стиля исходного слоя."""
+    fallback = QColor(80, 80, 80)
+    if layer is None:
+        return fallback
+    renderer = layer.renderer()
+    if renderer is None:
+        return fallback
+
+    symbol = None
+    if hasattr(renderer, "symbol") and callable(renderer.symbol):
+        symbol = renderer.symbol()
+    if symbol is None and hasattr(renderer, "symbols"):
+        try:
+            from qgis.core import QgsRenderContext
+
+            symbols = renderer.symbols(QgsRenderContext())
+            if symbols:
+                symbol = symbols[0]
+        except (TypeError, AttributeError, RuntimeError):
+            pass
+
+    if symbol is None:
+        return fallback
+
+    color = None
+    if hasattr(symbol, "color") and callable(symbol.color):
+        color = symbol.color()
+    if (color is None or not color.isValid()) and hasattr(symbol, "symbolLayerCount"):
+        if symbol.symbolLayerCount() > 0:
+            sl = symbol.symbolLayer(0)
+            if hasattr(sl, "color") and callable(sl.color):
+                color = sl.color()
+
+    if color is None or not color.isValid():
+        return fallback
+    return QColor(color)
+
+
+def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
+    fill = QColor(color)
+    fill.setAlpha(255)
+    outline = QColor(
+        max(0, fill.red() - 50),
+        max(0, fill.green() - 50),
+        max(0, fill.blue() - 50),
+        255,
+    )
+    return QgsMarkerSymbol.createSimple(
+        {
+            "name": "circle",
+            "color": f"{fill.red()},{fill.green()},{fill.blue()},255",
+            "outline_color": f"{outline.red()},{outline.green()},{outline.blue()},255",
+            "outline_width": "0.35",
+            "outline_width_unit": "MM",
+            "size": str(POINT_SIZE_MM),
+            "size_unit": "MM",
+        }
+    )
+
+
 def _mark_label_settings():
-    """Default mark labels: above point, Times New Roman 12, thin white halo."""
+    """Mark labels at the top edge of the point: Times New Roman 12, white halo."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -102,16 +166,24 @@ def _mark_label_settings():
     settings.enabled = True
     settings.setFormat(text)
     settings.placement = _label_placement_over_point()
-    if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
+
+    # якорь у верхней границы точки
+    if hasattr(Qgis, "LabelQuadrantPosition") and hasattr(settings, "quadOffset"):
+        settings.quadOffset = Qgis.LabelQuadrantPosition.Above
+    elif hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
         settings, "quadOffset"
     ):
         settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
+
     if hasattr(settings, "xOffset"):
         settings.xOffset = 0
+    # небольшой зазор над верхней кромкой маркера
     if hasattr(settings, "yOffset"):
-        settings.yOffset = 1.2
+        settings.yOffset = POINT_SIZE_MM * 0.55
     if hasattr(settings, "offsetUnits"):
         settings.offsetUnits = QgsUnitTypes.RenderMillimeters
+    if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
+        settings.offsetType = QgsPalLayerSettings.FromPoint
     return settings
 
 
@@ -585,16 +657,10 @@ class ProfileChainageDialog(QDialog):
         layer.setLabelsEnabled(True)
 
     def _style_marks_preview(self, layer: QgsVectorLayer):
-        symbol = QgsMarkerSymbol.createSimple(
-            {
-                "name": "circle",
-                "color": "230,126,34,200",
-                "outline_color": "120,60,10,255",
-                "outline_width": "0.4",
-                "size": "2.4",
-            }
+        color = _source_line_color(self.source_layer)
+        layer.setRenderer(
+            QgsSingleSymbolRenderer(_marker_symbol_for_line_color(color))
         )
-        layer.setRenderer(QgsSingleSymbolRenderer(symbol))
         layer.setLabeling(QgsVectorLayerSimpleLabeling(_mark_label_settings()))
         layer.setLabelsEnabled(True)
 
@@ -756,6 +822,10 @@ class ProfileChainageDialog(QDialog):
         provider.addFeatures(all_features)
         out_layer.updateExtents()
 
+        line_color = _source_line_color(self.source_layer)
+        out_layer.setRenderer(
+            QgsSingleSymbolRenderer(_marker_symbol_for_line_color(line_color))
+        )
         out_layer.setLabeling(QgsVectorLayerSimpleLabeling(_mark_label_settings()))
         out_layer.setLabelsEnabled(True)
 
