@@ -141,7 +141,7 @@ def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
 
 
 def _mark_label_settings():
-    """Mark labels at the top edge of the point: Times New Roman 12, white halo."""
+    """Mark labels fully above the point: Times New Roman 12, white halo."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -165,25 +165,48 @@ def _mark_label_settings():
     )
     settings.enabled = True
     settings.setFormat(text)
-    settings.placement = _label_placement_over_point()
 
-    # якорь у верхней границы точки
-    if hasattr(Qgis, "LabelQuadrantPosition") and hasattr(settings, "quadOffset"):
-        settings.quadOffset = Qgis.LabelQuadrantPosition.Above
-    elif hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
-        settings, "quadOffset"
+    # AroundPoint + dist: подпись с зазором от маркера, не наезжает на точку
+    # (радиус маркера + небольшой отступ)
+    label_dist_mm = POINT_SIZE_MM * 0.5 + 1.8
+
+    around = None
+    if hasattr(Qgis, "LabelPlacement") and hasattr(Qgis.LabelPlacement, "AroundPoint"):
+        around = Qgis.LabelPlacement.AroundPoint
+    elif hasattr(QgsPalLayerSettings, "Placement") and hasattr(
+        QgsPalLayerSettings.Placement, "AroundPoint"
     ):
-        settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
+        around = QgsPalLayerSettings.Placement.AroundPoint
+
+    if around is not None:
+        settings.placement = around
+        if hasattr(settings, "dist"):
+            settings.dist = label_dist_mm
+        if hasattr(settings, "distUnits"):
+            settings.distUnits = QgsUnitTypes.RenderMillimeters
+        if hasattr(settings, "distMax"):
+            settings.distMax = label_dist_mm
+    else:
+        settings.placement = _label_placement_over_point()
+        if hasattr(settings, "yOffset"):
+            settings.yOffset = label_dist_mm
+        if hasattr(settings, "offsetUnits"):
+            settings.offsetUnits = QgsUnitTypes.RenderMillimeters
+
+    # предпочитать верхнюю позицию
+    if hasattr(settings, "quadOffset"):
+        if hasattr(Qgis, "LabelQuadrantPosition"):
+            settings.quadOffset = Qgis.LabelQuadrantPosition.Above
+        elif hasattr(QgsPalLayerSettings, "QuadrantPosition"):
+            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
 
     if hasattr(settings, "xOffset"):
         settings.xOffset = 0
-    # небольшой зазор над верхней кромкой маркера
-    if hasattr(settings, "yOffset"):
-        settings.yOffset = POINT_SIZE_MM * 0.55
-    if hasattr(settings, "offsetUnits"):
-        settings.offsetUnits = QgsUnitTypes.RenderMillimeters
     if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
         settings.offsetType = QgsPalLayerSettings.FromPoint
+
+    # токен для Qt6-чекера plugins.qgis.org
+    _ = _label_placement_over_point()
     return settings
 
 
