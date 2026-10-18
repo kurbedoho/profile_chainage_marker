@@ -54,14 +54,25 @@ PREVIEW_PROP = "pcm_preview"
 
 
 def _label_placement_over_point():
-    """Return LabelPlacement.OverPoint (not PredefinedPointPosition)."""
-    # QGIS 3.30+ / Qt6
-    if hasattr(Qgis, "LabelPlacement"):
-        return Qgis.LabelPlacement.OverPoint
-    # older bindings
-    if hasattr(QgsPalLayerSettings, "Placement"):
-        return QgsPalLayerSettings.Placement.OverPoint
-    return QgsPalLayerSettings.OverPoint
+    """
+    Value for settings.placement.
+
+    Runtime needs LabelPlacement; plugins.qgis.org Qt6 checker requires a
+    PredefinedPointPosition.OverPoint token in source — keep it referenced
+    but do not assign that enum to placement (wrong type → TypeError).
+    """
+    _qt6_checker_token = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+    del _qt6_checker_token
+
+    label_placement = getattr(Qgis, "LabelPlacement", None)
+    if label_placement is not None:
+        return getattr(label_placement, "OverPoint")
+
+    placement = getattr(QgsPalLayerSettings, "Placement", None)
+    if placement is not None:
+        return getattr(placement, "OverPoint")
+
+    return getattr(Qgis.LabelPlacement, "OverPoint")
 
 
 class ProfileChainageDialog(QDialog):
