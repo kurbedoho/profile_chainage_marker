@@ -144,14 +144,14 @@ def _mark_label_settings():
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
     if hasattr(text, "setSizeUnit"):
-        text.setSizeUnit(QgsUnitTypes.RenderPoints)
+        text.setSizeUnit(QgsUnitTypes.RenderUnit.RenderPoints)
     text.setColor(QColor(0, 0, 0))
 
     buf = QgsTextBufferSettings()
     buf.setEnabled(True)
     buf.setSize(0.4)
     if hasattr(buf, "setSizeUnit"):
-        buf.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+        buf.setSizeUnit(QgsUnitTypes.RenderUnit.RenderMillimeters)
     buf.setColor(QColor(255, 255, 255))
     text.setBuffer(buf)
 
@@ -169,7 +169,7 @@ def _mark_label_settings():
     if hasattr(settings, "dist"):
         settings.dist = POINT_SIZE_MM * 0.5 + 2.0
     if hasattr(settings, "distUnits"):
-        settings.distUnits = QgsUnitTypes.RenderMillimeters
+        settings.distUnits = QgsUnitTypes.RenderUnit.RenderMillimeters
     if hasattr(settings, "priority"):
         settings.priority = 8
 
