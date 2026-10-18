@@ -2,11 +2,18 @@
 
 Плагин QGIS (3.28+) для разметки линий-профилей точками с подписью по длине.
 
+## Скачать
+
+Прямая ссылка на ZIP:  
+https://github.com/kurbedoho/profile_chainage_marker/releases/latest/download/profile_chainage_marker.zip
+
+Страница релизов: https://github.com/kurbedoho/profile_chainage_marker/releases
+
 ## Установка на любом компьютере
 
 ### Способ 1 — из ZIP (самый простой)
 
-1. Скачайте файл `profile_chainage_marker.zip` (Releases на GitHub или с диска).
+1. Скачайте `profile_chainage_marker.zip` по ссылке выше.
 2. В QGIS: **Модули → Управление и установка модулей → Установить из ZIP**.
 3. Выберите скачанный zip → **Установить**.
 4. Включите модуль **Profile Chainage Marker**.
