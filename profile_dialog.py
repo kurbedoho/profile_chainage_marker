@@ -75,7 +75,6 @@ class ProfileChainageDialog(QDialog):
 
         self.rubber_lines = []
         self.rubber_arrows = None
-        self.rubber_start_back = None  # стрелки у старта против хода профиля
         self.markers_start = []
         self.markers_end = []
 
@@ -230,11 +229,6 @@ class ProfileChainageDialog(QDialog):
             self.rubber_arrows.reset(QgsWkbTypes.GeometryType.LineGeometry)
             self._remove_canvas_item(self.rubber_arrows)
             self.rubber_arrows = None
-
-        if self.rubber_start_back is not None:
-            self.rubber_start_back.reset(QgsWkbTypes.GeometryType.LineGeometry)
-            self._remove_canvas_item(self.rubber_start_back)
-            self.rubber_start_back = None
 
         for m in self.markers_start + self.markers_end:
             m.hide()
@@ -393,12 +387,6 @@ class ProfileChainageDialog(QDialog):
         self.rubber_arrows.setColor(QColor(231, 76, 60, 255))
         self.rubber_arrows.setWidth(3)
 
-        self.rubber_start_back = QgsRubberBand(
-            self.canvas, QgsWkbTypes.GeometryType.LineGeometry
-        )
-        self.rubber_start_back.setColor(QColor(0, 140, 60, 255))
-        self.rubber_start_back.setWidth(4)
-
         id_layer = self._make_memory_point_layer(
             "превью ID профилей",
             crs,
@@ -457,13 +445,8 @@ class ProfileChainageDialog(QDialog):
                 self.markers_start.append(
                     self._make_marker(sp, QColor(39, 174, 96), size=16)
                 )
-                # ID и «обратная» стрелка — всегда против хода профиля
+                # подпись ID — против хода профиля (стрелку у старта не рисуем)
                 if fwd is not None:
-                    back_arrow = self._start_back_arrow(sp, fwd)
-                    if back_arrow is not None:
-                        self.rubber_start_back.addGeometry(
-                            back_arrow, self.source_layer
-                        )
                     id_geom = self._id_label_point(sp, fwd)
                 else:
                     id_geom = start_pt
@@ -631,22 +614,6 @@ class ProfileChainageDialog(QDialog):
         ux, uy = forward_unit
         return QgsGeometry.fromPointXY(
             QgsPointXY(start_pt.x() - ux * offset, start_pt.y() - uy * offset)
-        )
-
-    def _start_back_arrow(self, start_pt, forward_unit):
-        """Стрелка у старта, направленная против движения профиля."""
-        mupp = max(self.canvas.mapUnitsPerPixel(), 1e-12)
-        arrow_len = mupp * 28.0
-        ux, uy = forward_unit
-        # против хода: от старта назад
-        tip = QgsPointXY(start_pt.x() - ux * arrow_len, start_pt.y() - uy * arrow_len)
-        tail = QgsPointXY(start_pt.x(), start_pt.y())
-        # наконечник смотрит в сторону tip (против профиля)
-        return self._arrow_head_geometry(
-            tail,
-            tip,
-            tip,
-            arrow_len * 0.55,
         )
 
     def _arrows_along_line(self, geom: QgsGeometry, count: int):
