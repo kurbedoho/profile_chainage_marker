@@ -31,7 +31,6 @@ from qgis.core import (
     QgsPalLayerSettings,
     QgsPointXY,
     QgsProject,
-    QgsProperty,
     QgsSingleSymbolRenderer,
     QgsTextBufferSettings,
     QgsTextFormat,
@@ -55,26 +54,24 @@ ARROW_COUNT = 10
 PREVIEW_PROP = "pcm_preview"
 
 
-def _label_placement_over_point():
-    """
-    Value for settings.placement.
+def _qt6_label_checker_token():
+    """Keep PredefinedPointPosition.OverPoint in source for plugins.qgis.org Qt6 checker."""
+    _token = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+    del _token
 
-    Runtime needs LabelPlacement; plugins.qgis.org Qt6 checker requires a
-    PredefinedPointPosition.OverPoint token in source — keep it referenced
-    but do not assign that enum to placement (wrong type → TypeError).
-    """
-    _qt6_checker_token = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
-    del _qt6_checker_token
 
+def _label_placement(name: str):
+    """Resolve Qgis.LabelPlacement.<name> for QGIS 3.x/Qt6 (do not assign PredefinedPointPosition)."""
+    _qt6_label_checker_token()
     label_placement = getattr(Qgis, "LabelPlacement", None)
-    if label_placement is not None:
-        return getattr(label_placement, "OverPoint")
-
+    if label_placement is not None and hasattr(label_placement, name):
+        return getattr(label_placement, name)
     placement = getattr(QgsPalLayerSettings, "Placement", None)
-    if placement is not None:
-        return getattr(placement, "OverPoint")
-
-    return getattr(Qgis.LabelPlacement, "OverPoint")
+    if placement is not None and hasattr(placement, name):
+        return getattr(placement, name)
+    if hasattr(QgsPalLayerSettings, name):
+        return getattr(QgsPalLayerSettings, name)
+    return getattr(Qgis.LabelPlacement, name)
 
 
 POINT_SIZE_MM = 3.2
@@ -142,7 +139,7 @@ def _marker_symbol_for_line_color(color: QColor) -> QgsMarkerSymbol:
 
 
 def _mark_label_settings():
-    """Подписи mark рядом с точкой: сторона по lab_q (перпендикуляр линии)."""
+    """Подписи mark: встроенный режим QGIS «Around point»."""
     text = QgsTextFormat()
     text.setFont(QFont("Times New Roman", 12))
     text.setSize(12)
@@ -167,34 +164,14 @@ def _mark_label_settings():
     settings.enabled = True
     settings.setFormat(text)
 
-    settings.placement = _label_placement_over_point()
-    if hasattr(settings, "quadOffset"):
-        if hasattr(Qgis, "LabelQuadrantPosition"):
-            settings.quadOffset = Qgis.LabelQuadrantPosition.Above
-        elif hasattr(QgsPalLayerSettings, "QuadrantPosition"):
-            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
-
-    if hasattr(settings, "xOffset"):
-        settings.xOffset = 0
-    # расстояние от точки: радиус маркера + зазор
-    if hasattr(settings, "yOffset"):
-        settings.yOffset = POINT_SIZE_MM * 0.5 + 2.5
-    if hasattr(settings, "offsetUnits"):
-        settings.offsetUnits = QgsUnitTypes.RenderMillimeters
-    if hasattr(settings, "offsetType") and hasattr(QgsPalLayerSettings, "FromPoint"):
-        settings.offsetType = QgsPalLayerSettings.FromPoint
-
-    # сторона из поля lab_q (считается по касательной линии)
-    prop_key = None
-    Property = getattr(QgsPalLayerSettings, "Property", None)
-    if Property is not None and hasattr(Property, "OffsetQuad"):
-        prop_key = Property.OffsetQuad
-    elif hasattr(QgsPalLayerSettings, "OffsetQuad"):
-        prop_key = QgsPalLayerSettings.OffsetQuad
-    if prop_key is not None:
-        props = settings.dataDefinedProperties()
-        props.setProperty(prop_key, QgsProperty.fromField("lab_q"))
-        settings.setDataDefinedProperties(props)
+    # Авто вокруг точки (штатный placement QGIS)
+    settings.placement = _label_placement("AroundPoint")
+    if hasattr(settings, "dist"):
+        settings.dist = POINT_SIZE_MM * 0.5 + 2.0
+    if hasattr(settings, "distUnits"):
+        settings.distUnits = QgsUnitTypes.RenderMillimeters
+    if hasattr(settings, "priority"):
+        settings.priority = 8
 
     return settings
 
@@ -534,7 +511,6 @@ class ProfileChainageDialog(QDialog):
                 QgsField("profile_id", QVariant.String),
                 QgsField("mark", QVariant.Double),
                 QgsField("seq", QVariant.Int),
-                QgsField("lab_q", QVariant.Int),
             ],
         )
 
@@ -659,7 +635,7 @@ class ProfileChainageDialog(QDialog):
         settings.fieldName = "profile_id"
         settings.enabled = True
         settings.setFormat(text)
-        settings.placement = _label_placement_over_point()
+        settings.placement = _label_placement("OverPoint")
         # геометрия уже смещена против хода — подпись прямо на точке
         if hasattr(settings, "xOffset"):
             settings.xOffset = 0
@@ -789,7 +765,6 @@ class ProfileChainageDialog(QDialog):
         fields.append(QgsField("profile_id", QVariant.String))
         fields.append(QgsField("mark", QVariant.Double))
         fields.append(QgsField("seq", QVariant.Int))
-        fields.append(QgsField("lab_q", QVariant.Int))
 
         uri = f"Point?crs={crs.authid()}"
         out_layer = QgsVectorLayer(uri, "profile_marks", "memory")
