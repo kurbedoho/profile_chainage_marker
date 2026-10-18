@@ -34,6 +34,7 @@ from qgis.core import (
     QgsSingleSymbolRenderer,
     QgsTextBufferSettings,
     QgsTextFormat,
+    QgsUnitTypes,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
     QgsWkbTypes,
@@ -73,6 +74,45 @@ def _label_placement_over_point():
         return getattr(placement, "OverPoint")
 
     return getattr(Qgis.LabelPlacement, "OverPoint")
+
+
+def _mark_label_settings():
+    """Default mark labels: above point, Times New Roman 12, thin white halo."""
+    text = QgsTextFormat()
+    text.setFont(QFont("Times New Roman", 12))
+    text.setSize(12)
+    if hasattr(text, "setSizeUnit"):
+        text.setSizeUnit(QgsUnitTypes.RenderPoints)
+    text.setColor(QColor(0, 0, 0))
+
+    buf = QgsTextBufferSettings()
+    buf.setEnabled(True)
+    buf.setSize(0.4)
+    if hasattr(buf, "setSizeUnit"):
+        buf.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+    buf.setColor(QColor(255, 255, 255))
+    text.setBuffer(buf)
+
+    settings = QgsPalLayerSettings()
+    settings.isExpression = True
+    settings.fieldName = (
+        'if(mark = floor(mark), to_string(to_int(mark)), '
+        'format_number(mark, 3))'
+    )
+    settings.enabled = True
+    settings.setFormat(text)
+    settings.placement = _label_placement_over_point()
+    if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
+        settings, "quadOffset"
+    ):
+        settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Above
+    if hasattr(settings, "xOffset"):
+        settings.xOffset = 0
+    if hasattr(settings, "yOffset"):
+        settings.yOffset = 1.2
+    if hasattr(settings, "offsetUnits"):
+        settings.offsetUnits = QgsUnitTypes.RenderMillimeters
+    return settings
 
 
 class ProfileChainageDialog(QDialog):
@@ -555,35 +595,7 @@ class ProfileChainageDialog(QDialog):
             }
         )
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
-
-        text = QgsTextFormat()
-        text.setFont(QFont("Arial", 8))
-        text.setSize(8)
-        text.setColor(QColor(100, 40, 0))
-        buf = QgsTextBufferSettings()
-        buf.setEnabled(True)
-        buf.setSize(0.9)
-        buf.setColor(QColor(255, 255, 255, 220))
-        text.setBuffer(buf)
-
-        settings = QgsPalLayerSettings()
-        settings.isExpression = True
-        # целые без .0, иначе до 3 знаков
-        settings.fieldName = (
-            'if(mark = floor(mark), to_string(to_int(mark)), '
-            'format_number(mark, 3))'
-        )
-        settings.enabled = True
-        settings.setFormat(text)
-        settings.placement = _label_placement_over_point()
-        if hasattr(QgsPalLayerSettings, "QuadrantPosition") and hasattr(
-            settings, "quadOffset"
-        ):
-            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Below
-        if hasattr(settings, "yOffset"):
-            settings.yOffset = 2
-
-        layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        layer.setLabeling(QgsVectorLayerSimpleLabeling(_mark_label_settings()))
         layer.setLabelsEnabled(True)
 
     def _make_marker(self, point, color: QColor, size: int = 12) -> QgsVertexMarker:
@@ -744,15 +756,7 @@ class ProfileChainageDialog(QDialog):
         provider.addFeatures(all_features)
         out_layer.updateExtents()
 
-        settings = QgsPalLayerSettings()
-        settings.isExpression = True
-        settings.fieldName = (
-            'if(mark = floor(mark), to_string(to_int(mark)), '
-            'format_number(mark, 3))'
-        )
-        settings.enabled = True
-        settings.placement = _label_placement_over_point()
-        out_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        out_layer.setLabeling(QgsVectorLayerSimpleLabeling(_mark_label_settings()))
         out_layer.setLabelsEnabled(True)
 
         # превью больше не нужно — есть итоговый слой
