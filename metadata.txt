@@ -1,0 +1,19 @@
+﻿[general]
+name=Profile Chainage Marker
+qgisMinimumVersion=3.28
+qgisMaximumVersion=3.99
+description=Разметка профилей (линий) точками с подписью по длине, с учётом направления и масштаба подписей
+version=1.3.0
+author=Profile Tools
+email=
+about=Загружает линии-профили, показывает направление, позволяет развернуть, задать шаг и длину разметки, создаёт временный точечный слой с полями profile_id, mark, seq. Точки на изгибах с масштабированием отметок.
+tracker=https://github.com/kurbedoho/profile_chainage_marker/issues
+repository=https://github.com/kurbedoho/profile_chainage_marker
+hasProcessingProvider=no
+category=Vector
+tags=profile,chainage,marker,lines,points,разметка
+homepage=https://github.com/kurbedoho/profile_chainage_marker
+icon=icon.svg
+experimental=False
+deprecated=False
+supportsQt6=True
