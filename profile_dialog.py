@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import math
 
-from qgis.PyQt.QtCore import Qt, QVariant
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtCore import Qt, QTimer, QVariant
+from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -20,13 +20,20 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from qgis.core import (
+    QgsFeature,
     QgsField,
     QgsFields,
     QgsGeometry,
     QgsMapLayerProxyModel,
+    QgsMarkerSymbol,
+    QgsPalLayerSettings,
     QgsPointXY,
     QgsProject,
+    QgsSingleSymbolRenderer,
+    QgsTextBufferSettings,
+    QgsTextFormat,
     QgsVectorLayer,
+    QgsVectorLayerSimpleLabeling,
     QgsWkbTypes,
 )
 from qgis.gui import QgsMapLayerComboBox, QgsRubberBand, QgsVertexMarker
@@ -42,6 +49,7 @@ COL_START = 4
 COL_REVERSE = 5
 
 ARROW_COUNT = 10
+PREVIEW_PROP = "pcm_preview"
 
 
 class ProfileChainageDialog(QDialog):
@@ -57,6 +65,11 @@ class ProfileChainageDialog(QDialog):
         self.rubber_arrows = None
         self.markers_start = []
         self.markers_end = []
+
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(120)
+        self._preview_timer.timeout.connect(self.refresh_map_preview)
 
         self._build_ui()
         self.clear_map_preview()
@@ -126,9 +139,10 @@ class ProfileChainageDialog(QDialog):
         root.addWidget(self.table, 1)
 
         hint = QLabel(
-            "На карте у каждого профиля: зелёная точка — начало (0), красная — конец, "
-            "10 стрелок вдоль геометрии. Исходный слой не меняется. "
-            "Подписи mark масштабируются под «Длину разметки»."
+            "На карте сразу: ID у начала профиля, стрелки направления, "
+            "превью точек разметки с подписями mark. "
+            "Меняете шаг/длину/разворот — превью обновляется. "
+            "Исходный слой не меняется."
         )
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -147,17 +161,21 @@ class ProfileChainageDialog(QDialog):
         btn_close.clicked.connect(self.close)
         self.layer_combo.layerChanged.connect(self.on_layer_changed)
         self.table.cellChanged.connect(self.on_cell_changed)
+        self.chk_bends.toggled.connect(self.schedule_preview_refresh)
 
-        # если слой уже выбран в комбо при открытии — сразу заполнить
         current = self.layer_combo.currentLayer()
         if current is not None:
             self.populate_table(current)
 
+    def schedule_preview_refresh(self):
+        self._preview_timer.start()
+
     def cleanup(self):
+        self._preview_timer.stop()
         self.clear_map_preview()
 
     def closeEvent(self, event):
-        self.clear_map_preview()
+        self.cleanup()
         super().closeEvent(event)
 
     def _remove_canvas_item(self, item):
@@ -168,7 +186,19 @@ class ProfileChainageDialog(QDialog):
         except Exception:
             pass
 
+    def _remove_preview_layers(self):
+        project = QgsProject.instance()
+        to_remove = [
+            layer.id()
+            for layer in project.mapLayers().values()
+            if layer.customProperty(PREVIEW_PROP) == "1"
+        ]
+        if to_remove:
+            project.removeMapLayers(to_remove)
+
     def clear_map_preview(self):
+        self._remove_preview_layers()
+
         for rb in self.rubber_lines:
             rb.reset(QgsWkbTypes.LineGeometry)
             self._remove_canvas_item(rb)
@@ -249,7 +279,6 @@ class ProfileChainageDialog(QDialog):
             item_real.setData(Qt.UserRole, real_len)
             self.table.setItem(row, COL_REAL, item_real)
 
-            # длина разметки по умолчанию — реальная длина, округлённая до целых
             default_lmark = float(round(real_len))
             self.table.setItem(row, COL_STEP, self._number_item(step))
             self.table.setItem(row, COL_LMARK, self._number_item(default_lmark))
@@ -283,10 +312,11 @@ class ProfileChainageDialog(QDialog):
             self.table.setItem(row, COL_STEP, self._number_item(step))
             self.table.setItem(row, COL_START, self._number_item(start))
         self.table.blockSignals(False)
+        self.refresh_map_preview()
 
     def on_cell_changed(self, row, column):
         if column == COL_REVERSE:
-            self.refresh_map_preview()
+            self.schedule_preview_refresh()
         elif column in (COL_STEP, COL_LMARK, COL_START):
             item = self.table.item(row, column)
             if item is None:
@@ -299,19 +329,54 @@ class ProfileChainageDialog(QDialog):
                 item.setText(f"{value:g}")
                 self.table.blockSignals(False)
             item.setData(Qt.UserRole, value)
+            self.schedule_preview_refresh()
 
     def _row_reverse(self, row: int) -> bool:
         item = self.table.item(row, COL_REVERSE)
         return item is not None and item.checkState() == Qt.Checked
+
+    def _row_number(self, row: int, column: int) -> float:
+        item = self.table.item(row, column)
+        if item is None:
+            return 0.0
+        data = item.data(Qt.UserRole)
+        if data is not None:
+            try:
+                return float(data)
+            except (TypeError, ValueError):
+                pass
+        try:
+            return float(item.text().replace(",", "."))
+        except ValueError:
+            return 0.0
 
     def refresh_map_preview(self):
         self.clear_map_preview()
         if self.source_layer is None or self.table.rowCount() == 0:
             return
 
+        crs = self.source_layer.crs()
         self.rubber_arrows = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
         self.rubber_arrows.setColor(QColor(231, 76, 60, 230))
         self.rubber_arrows.setWidth(2)
+
+        id_layer = self._make_memory_point_layer(
+            "превью ID профилей",
+            crs,
+            [QgsField("profile_id", QVariant.String)],
+        )
+        marks_layer = self._make_memory_point_layer(
+            "превью разметки",
+            crs,
+            [
+                QgsField("profile_id", QVariant.String),
+                QgsField("mark", QVariant.Double),
+                QgsField("seq", QVariant.Int),
+            ],
+        )
+
+        id_features = []
+        mark_features = []
 
         for row in range(self.table.rowCount()):
             feat_id = self.feature_by_row.get(row)
@@ -331,8 +396,13 @@ class ProfileChainageDialog(QDialog):
             if length <= 0:
                 continue
 
+            profile_id = self.table.item(row, COL_ID).text()
+            step = self._row_number(row, COL_STEP)
+            length_mark = self._row_number(row, COL_LMARK)
+            start_mark = self._row_number(row, COL_START)
+
             line_rb = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
-            line_rb.setColor(QColor(31, 78, 121, 160))
+            line_rb.setColor(QColor(31, 78, 121, 140))
             line_rb.setWidth(2)
             line_rb.setToGeometry(draw_geom, self.source_layer)
             self.rubber_lines.append(line_rb)
@@ -343,6 +413,10 @@ class ProfileChainageDialog(QDialog):
                 self.markers_start.append(
                     self._make_marker(start_pt.asPoint(), QColor(39, 174, 96))
                 )
+                id_feat = QgsFeature(id_layer.fields())
+                id_feat.setGeometry(start_pt)
+                id_feat.setAttribute("profile_id", profile_id)
+                id_features.append(id_feat)
             if not end_pt.isEmpty():
                 self.markers_end.append(
                     self._make_marker(end_pt.asPoint(), QColor(231, 76, 60))
@@ -351,7 +425,124 @@ class ProfileChainageDialog(QDialog):
             for arrow_geom in self._arrows_along_line(draw_geom, ARROW_COUNT):
                 self.rubber_arrows.addGeometry(arrow_geom, self.source_layer)
 
+            if step > 0:
+                mark_features.extend(
+                    build_point_features(
+                        feat.geometry(),
+                        reverse,
+                        step,
+                        length_mark,
+                        start_mark,
+                        profile_id,
+                        marks_layer.fields(),
+                        include_bends=self.chk_bends.isChecked(),
+                    )
+                )
+
+        if id_features:
+            id_layer.dataProvider().addFeatures(id_features)
+            id_layer.updateExtents()
+            self._style_id_preview(id_layer)
+            QgsProject.instance().addMapLayer(id_layer)
+
+        if mark_features:
+            marks_layer.dataProvider().addFeatures(mark_features)
+            marks_layer.updateExtents()
+            self._style_marks_preview(marks_layer)
+            QgsProject.instance().addMapLayer(marks_layer)
+
         self.canvas.refresh()
+
+    def _make_memory_point_layer(self, name, crs, fields_list):
+        layer = QgsVectorLayer(f"Point?crs={crs.authid()}", name, "memory")
+        layer.setCustomProperty(PREVIEW_PROP, "1")
+        provider = layer.dataProvider()
+        provider.addAttributes(fields_list)
+        layer.updateFields()
+        return layer
+
+    def _style_id_preview(self, layer: QgsVectorLayer):
+        symbol = QgsMarkerSymbol.createSimple(
+            {
+                "name": "circle",
+                "color": "39,174,96,0",
+                "outline_color": "39,174,96,0",
+                "size": "0.1",
+            }
+        )
+        layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+        text = QgsTextFormat()
+        text.setFont(QFont("Arial", 11, QFont.Bold))
+        text.setSize(11)
+        text.setColor(QColor(20, 90, 50))
+        buf = QgsTextBufferSettings()
+        buf.setEnabled(True)
+        buf.setSize(1.2)
+        buf.setColor(QColor(255, 255, 255, 230))
+        text.setBuffer(buf)
+
+        settings = QgsPalLayerSettings()
+        settings.fieldName = "profile_id"
+        settings.enabled = True
+        settings.setFormat(text)
+        try:
+            settings.placement = QgsPalLayerSettings.Placement.OverPoint
+        except AttributeError:
+            settings.placement = QgsPalLayerSettings.OverPoint
+        try:
+            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.AboveRight
+            settings.xOffset = 2
+            settings.yOffset = 2
+        except Exception:
+            pass
+
+        layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        layer.setLabelsEnabled(True)
+
+    def _style_marks_preview(self, layer: QgsVectorLayer):
+        symbol = QgsMarkerSymbol.createSimple(
+            {
+                "name": "circle",
+                "color": "230,126,34,200",
+                "outline_color": "120,60,10,255",
+                "outline_width": "0.4",
+                "size": "2.4",
+            }
+        )
+        layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+        text = QgsTextFormat()
+        text.setFont(QFont("Arial", 8))
+        text.setSize(8)
+        text.setColor(QColor(100, 40, 0))
+        buf = QgsTextBufferSettings()
+        buf.setEnabled(True)
+        buf.setSize(0.9)
+        buf.setColor(QColor(255, 255, 255, 220))
+        text.setBuffer(buf)
+
+        settings = QgsPalLayerSettings()
+        settings.isExpression = True
+        # целые без .0, иначе до 3 знаков
+        settings.fieldName = (
+            'if(mark = floor(mark), to_string(to_int(mark)), '
+            'format_number(mark, 3))'
+        )
+        settings.enabled = True
+        settings.setFormat(text)
+        try:
+            settings.placement = QgsPalLayerSettings.Placement.OverPoint
+        except AttributeError:
+            settings.placement = QgsPalLayerSettings.OverPoint
+        try:
+            settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.Below
+            settings.yOffset = 2
+        except Exception:
+            pass
+
+        layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        layer.setLabelsEnabled(True)
 
     def _make_marker(self, point, color: QColor) -> QgsVertexMarker:
         marker = QgsVertexMarker(self.canvas)
@@ -365,22 +556,18 @@ class ProfileChainageDialog(QDialog):
         return marker
 
     def _arrows_along_line(self, geom: QgsGeometry, count: int):
-        """10 стрелок равномерно вдоль линии, касательная следует геометрии."""
         length = geom.length()
         if length <= 0 or count <= 0:
             return []
 
-        # размер стрелки от длины профиля и масштаба карты
         map_units_per_px = self.canvas.mapUnitsPerPixel()
         size_by_line = length / (count * 5.0)
         size_by_screen = map_units_per_px * 14.0
         arrow_len = max(min(size_by_line, length * 0.08), size_by_screen * 0.35)
-        # шаг вдоль линии для оценки касательной
         sample = max(arrow_len * 0.35, length * 1e-4)
 
         arrows = []
         for i in range(count):
-            # равномерно внутри линии, не на самых концах
             t = (i + 0.5) / count
             dist = t * length
             d0 = max(0.0, dist - sample * 0.5)
@@ -415,7 +602,6 @@ class ProfileChainageDialog(QDialog):
         if hyp < 1e-12:
             return None
         ux, uy = dx / hyp, dy / hyp
-        # хвостик и наконечник относительно tip, вдоль локальной касательной
         tail = QgsPointXY(tip.x() - ux * arrow_len, tip.y() - uy * arrow_len)
         head = tip
         px, py = -uy, ux
@@ -429,21 +615,6 @@ class ProfileChainageDialog(QDialog):
             head.y() - uy * wing - py * wing * 0.7,
         )
         return QgsGeometry.fromPolylineXY([tail, head, left, head, right])
-
-    def _row_number(self, row: int, column: int) -> float:
-        item = self.table.item(row, column)
-        if item is None:
-            return 0.0
-        data = item.data(Qt.UserRole)
-        if data is not None:
-            try:
-                return float(data)
-            except (TypeError, ValueError):
-                pass
-        try:
-            return float(item.text().replace(",", "."))
-        except ValueError:
-            return 0.0
 
     def generate_points(self):
         if self.source_layer is None or self.table.rowCount() == 0:
@@ -501,10 +672,12 @@ class ProfileChainageDialog(QDialog):
         provider.addFeatures(all_features)
         out_layer.updateExtents()
 
-        from qgis.core import QgsPalLayerSettings, QgsVectorLayerSimpleLabeling
-
         settings = QgsPalLayerSettings()
-        settings.fieldName = "mark"
+        settings.isExpression = True
+        settings.fieldName = (
+            'if(mark = floor(mark), to_string(to_int(mark)), '
+            'format_number(mark, 3))'
+        )
         settings.enabled = True
         try:
             settings.placement = QgsPalLayerSettings.Placement.OverPoint
@@ -512,6 +685,9 @@ class ProfileChainageDialog(QDialog):
             settings.placement = QgsPalLayerSettings.OverPoint
         out_layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         out_layer.setLabelsEnabled(True)
+
+        # превью больше не нужно — есть итоговый слой
+        self._remove_preview_layers()
 
         QgsProject.instance().addMapLayer(out_layer)
         self.iface.setActiveLayer(out_layer)
