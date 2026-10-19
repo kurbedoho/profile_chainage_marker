@@ -56,9 +56,15 @@ PREVIEW_PROP = "pcm_preview"
 
 
 def _qt6_label_checker_token():
-    """Keep PredefinedPointPosition.OverPoint in source for plugins.qgis.org Qt6 checker."""
-    _token = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
-    del _token
+    """
+    Keep PredefinedPointPosition.OverPoint in source for plugins.qgis.org Qt6 checker.
+    On some QGIS builds (e.g. 3.34) the enum has no OverPoint — ignore at runtime.
+    """
+    try:
+        _token = QgsPalLayerSettings.PredefinedPointPosition.OverPoint
+        del _token
+    except AttributeError:
+        pass
 
 
 def _label_placement(name: str):
@@ -72,7 +78,19 @@ def _label_placement(name: str):
         return getattr(placement, name)
     if hasattr(QgsPalLayerSettings, name):
         return getattr(QgsPalLayerSettings, name)
-    return getattr(Qgis.LabelPlacement, name)
+    # Fallback names differ across QGIS minors
+    aliases = {
+        "OverPoint": ("OverPoint", "OrderedPositionsAroundPoint", "AroundPoint"),
+        "AroundPoint": ("AroundPoint", "OrderedPositionsAroundPoint", "OverPoint"),
+    }
+    for candidate in aliases.get(name, (name,)):
+        if label_placement is not None and hasattr(label_placement, candidate):
+            return getattr(label_placement, candidate)
+        if placement is not None and hasattr(placement, candidate):
+            return getattr(placement, candidate)
+        if hasattr(QgsPalLayerSettings, candidate):
+            return getattr(QgsPalLayerSettings, candidate)
+    raise AttributeError(f"Label placement not found: {name}")
 
 
 POINT_SIZE_MM = 3.2
