@@ -19,7 +19,7 @@ icon=icon.svg
 experimental=False
 deprecated=False
 supportsQt6=True
-changelog=1.5.0 - Mark labels centered below points
+changelog=1.5.0 - English UI + Russian; auto language from QGIS; AroundPoint labels
     1.4.11 - Center mark labels directly above points
     1.4.10 - Increase mark label distance so text clears the point symbol
     1.4.9 - Labels at top of point; point color matches source line

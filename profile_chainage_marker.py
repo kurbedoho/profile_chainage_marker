@@ -4,6 +4,7 @@ import os
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
+from .i18n import plugin_title, tr
 from .profile_dialog import ProfileChainageDialog
 
 
@@ -28,7 +29,7 @@ def _format_release_date(value):
     return value
 
 
-def plugin_display_name(plugin_dir, russian=False):
+def plugin_display_name(plugin_dir):
     meta = _read_metadata(plugin_dir)
     version = meta.get("version", "").strip()
     date_raw = meta.get("releasedate", "").strip()
@@ -43,13 +44,7 @@ def plugin_display_name(plugin_dir, russian=False):
     else:
         suffix = ""
 
-    if russian:
-        return f"Разметка профилей{suffix}"
-    base = meta.get("name", "Profile Chainage Marker")
-    # если в name уже есть версия — не дублировать
-    if version and version in base:
-        return base
-    return f"Profile Chainage Marker{suffix}"
+    return plugin_title(suffix)
 
 
 class ProfileChainageMarkerPlugin:
@@ -58,21 +53,21 @@ class ProfileChainageMarkerPlugin:
         self.action = None
         self.dialog = None
         self.plugin_dir = os.path.dirname(__file__)
-        self.menu_title = plugin_display_name(self.plugin_dir, russian=True)
+        self.menu_title = plugin_display_name(self.plugin_dir)
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "icon.svg")
-        title = self.menu_title
+        self.menu_title = plugin_display_name(self.plugin_dir)
         self.action = QAction(
             QIcon(icon_path),
-            title,
+            self.menu_title,
             self.iface.mainWindow(),
         )
         self.action.setToolTip(
-            f"{title} — разметка линий-профилей точками по длине"
+            f"{self.menu_title} — {tr('Mark chainage points along profile lines')}"
         )
         self.action.triggered.connect(self.run)
-        self.iface.addPluginToVectorMenu(title, self.action)
+        self.iface.addPluginToVectorMenu(self.menu_title, self.action)
         self.iface.addToolBarIcon(self.action)
 
     def unload(self):
@@ -85,10 +80,33 @@ class ProfileChainageMarkerPlugin:
             self.iface.removeToolBarIcon(self.action)
             self.action = None
 
+    def refresh_titles(self):
+        """Update menu/toolbar/window titles after language change."""
+        if self.action is None:
+            return
+        old_title = self.menu_title
+        new_title = plugin_display_name(self.plugin_dir)
+        if old_title != new_title:
+            self.iface.removePluginVectorMenu(old_title, self.action)
+            self.menu_title = new_title
+            self.iface.addPluginToVectorMenu(self.menu_title, self.action)
+        else:
+            self.menu_title = new_title
+        self.action.setText(self.menu_title)
+        self.action.setToolTip(
+            f"{self.menu_title} — {tr('Mark chainage points along profile lines')}"
+        )
+        if self.dialog is not None:
+            self.dialog.setWindowTitle(self.menu_title)
+
     def run(self):
         if self.dialog is None:
-            self.dialog = ProfileChainageDialog(self.iface, self.iface.mainWindow())
-        self.dialog.setWindowTitle(self.menu_title)
+            self.dialog = ProfileChainageDialog(
+                self.iface,
+                self.iface.mainWindow(),
+                on_language_changed=self.refresh_titles,
+            )
+        self.refresh_titles()
         self.dialog.show()
         self.dialog.raise_()
         self.dialog.activateWindow()

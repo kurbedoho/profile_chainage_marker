@@ -6,6 +6,7 @@ from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -42,6 +43,7 @@ from qgis.core import (
 from qgis.gui import QgsMapLayerComboBox, QgsRubberBand, QgsVertexMarker
 
 from .chainage import as_single_line, build_point_features, reversed_line
+from .i18n import get_language_preference, set_language_preference, tr
 
 
 COL_ID = 0
@@ -177,10 +179,11 @@ def _mark_label_settings():
 
 
 class ProfileChainageDialog(QDialog):
-    def __init__(self, iface, parent=None):
+    def __init__(self, iface, parent=None, on_language_changed=None):
         super().__init__(parent)
         self.iface = iface
         self.canvas = iface.mapCanvas()
+        self.on_language_changed = on_language_changed
         self.source_layer = None
         self.feature_by_row = {}
         self.id_field_name = None
@@ -201,8 +204,8 @@ class ProfileChainageDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # после показа окна — подхватить уже выбранный слой
-        # (при создании диалога combo иногда ещё пустой)
+        # After show, pick up the already selected layer
+        # (combo can still be empty when the dialog is first built).
         QTimer.singleShot(0, self._load_current_layer)
 
     def _load_current_layer(self):
@@ -215,54 +218,49 @@ class ProfileChainageDialog(QDialog):
             self.refresh_map_preview()
 
     def _build_ui(self):
-        self.setWindowTitle("Разметка профилей")
         self.resize(900, 560)
 
         root = QVBoxLayout(self)
 
-        source_box = QGroupBox("Исходные линии")
-        source_layout = QHBoxLayout(source_box)
+        lang_row = QHBoxLayout()
+        self.lbl_language = QLabel()
+        self.combo_language = QComboBox()
+        self.combo_language.setMinimumWidth(160)
+        lang_row.addWidget(self.lbl_language)
+        lang_row.addWidget(self.combo_language)
+        lang_row.addStretch(1)
+        root.addLayout(lang_row)
+
+        self.source_box = QGroupBox()
+        source_layout = QHBoxLayout(self.source_box)
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.LineLayer)
-        # не оставлять пустой выбор — иначе слой «есть», а таблица пустая
         if hasattr(self.layer_combo, "setAllowEmptyLayer"):
             self.layer_combo.setAllowEmptyLayer(False)
-        source_layout.addWidget(QLabel("Слой:"))
+        self.lbl_layer = QLabel()
+        source_layout.addWidget(self.lbl_layer)
         source_layout.addWidget(self.layer_combo, 1)
-        root.addWidget(source_box)
+        root.addWidget(self.source_box)
 
-        defaults_box = QGroupBox("Параметры по умолчанию")
-        form = QFormLayout(defaults_box)
+        self.defaults_box = QGroupBox()
+        form = QFormLayout(self.defaults_box)
         self.spin_step = QDoubleSpinBox()
         self.spin_step.setDecimals(3)
         self.spin_step.setRange(0.001, 1_000_000)
         self.spin_step.setValue(100.0)
-        form.addRow("Шаг разметки:", self.spin_step)
-        btn_apply_defaults = QPushButton("Применить шаг ко всем строкам")
-        form.addRow(btn_apply_defaults)
-        root.addWidget(defaults_box)
+        self.lbl_step = QLabel()
+        form.addRow(self.lbl_step, self.spin_step)
+        self.btn_apply_defaults = QPushButton()
+        form.addRow(self.btn_apply_defaults)
+        root.addWidget(self.defaults_box)
 
-        options_box = QGroupBox("Опции разметки")
-        options_layout = QVBoxLayout(options_box)
-        self.chk_bends = QCheckBox("Ставить точки на изгибах")
-        self.chk_bends.setToolTip(
-            "Дополнительные точки на промежуточных вершинах линии. "
-            "Отметка масштабируется под «Длину разметки» "
-            "(например разметка 0…200, изгиб посередине → 100)."
-        )
+        self.options_box = QGroupBox()
+        options_layout = QVBoxLayout(self.options_box)
+        self.chk_bends = QCheckBox()
         options_layout.addWidget(self.chk_bends)
-        root.addWidget(options_box)
+        root.addWidget(self.options_box)
 
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(
-            [
-                "ID",
-                "Реальная длина",
-                "Шаг",
-                "Длина разметки",
-                "Развернуть",
-            ]
-        )
         self.table.verticalHeader().setVisible(False)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -272,30 +270,88 @@ class ProfileChainageDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         root.addWidget(self.table, 1)
 
-        hint = QLabel(
-            "На карте: ID у начала профиля, стрелки направления, "
-            "превью точек с подписями mark (старт всегда 0). "
-            "Исходный слой не меняется."
-        )
-        hint.setWordWrap(True)
-        root.addWidget(hint)
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        root.addWidget(self.hint)
 
         buttons = QHBoxLayout()
-        btn_generate = QPushButton("Создать точки")
-        btn_generate.setDefault(True)
-        btn_close = QPushButton("Закрыть")
+        self.btn_generate = QPushButton()
+        self.btn_generate.setDefault(True)
+        self.btn_close = QPushButton()
         buttons.addStretch(1)
-        buttons.addWidget(btn_generate)
-        buttons.addWidget(btn_close)
+        buttons.addWidget(self.btn_generate)
+        buttons.addWidget(self.btn_close)
         root.addLayout(buttons)
 
-        btn_apply_defaults.clicked.connect(self.apply_defaults_to_table)
-        btn_generate.clicked.connect(self.generate_points)
-        btn_close.clicked.connect(self.close)
+        self.btn_apply_defaults.clicked.connect(self.apply_defaults_to_table)
+        self.btn_generate.clicked.connect(self.generate_points)
+        self.btn_close.clicked.connect(self.close)
         self.layer_combo.layerChanged.connect(self.on_layer_changed)
         self.table.cellChanged.connect(self.on_cell_changed)
         self.chk_bends.toggled.connect(self.schedule_preview_refresh)
+        self.combo_language.currentIndexChanged.connect(self._on_language_changed)
+
+        self.retranslate_ui()
         self._ui_ready = True
+
+    def retranslate_ui(self):
+        """Apply current language to all dialog texts."""
+        self.setWindowTitle(tr("Profile Chainage Marker"))
+        self.lbl_language.setText(tr("Language:"))
+        self.source_box.setTitle(tr("Source lines"))
+        self.lbl_layer.setText(tr("Layer:"))
+        self.defaults_box.setTitle(tr("Default parameters"))
+        self.lbl_step.setText(tr("Mark step:"))
+        self.btn_apply_defaults.setText(tr("Apply step to all rows"))
+        self.options_box.setTitle(tr("Marking options"))
+        self.chk_bends.setText(tr("Place points at bends"))
+        self.chk_bends.setToolTip(
+            tr(
+                "Extra points at intermediate line vertices. "
+                "The mark is scaled to Mark length "
+                "(e.g. marks 0…200, bend in the middle → 100)."
+            )
+        )
+        self.table.setHorizontalHeaderLabels(
+            [
+                tr("ID"),
+                tr("Real length"),
+                tr("Step"),
+                tr("Mark length"),
+                tr("Reverse"),
+            ]
+        )
+        self.hint.setText(
+            tr(
+                "On the map: ID at the profile start, direction arrows, "
+                "preview of mark points with labels (start is always 0). "
+                "The source layer is not modified."
+            )
+        )
+        self.btn_generate.setText(tr("Create points"))
+        self.btn_close.setText(tr("Close"))
+
+        pref = get_language_preference()
+        codes = ["auto", "en", "ru"]
+        labels = [tr("Auto (QGIS)"), tr("English"), tr("Russian")]
+        self.combo_language.blockSignals(True)
+        self.combo_language.clear()
+        for code, label in zip(codes, labels):
+            self.combo_language.addItem(label, code)
+        idx = codes.index(pref) if pref in codes else 0
+        self.combo_language.setCurrentIndex(idx)
+        self.combo_language.blockSignals(False)
+
+    def _on_language_changed(self, _index):
+        if not self._ui_ready:
+            return
+        code = self.combo_language.currentData()
+        if code is None:
+            return
+        set_language_preference(str(code))
+        self.retranslate_ui()
+        if callable(self.on_language_changed):
+            self.on_language_changed()
 
     def schedule_preview_refresh(self):
         self._preview_timer.start()
@@ -385,7 +441,9 @@ class ProfileChainageDialog(QDialog):
 
         self.id_field_name = self._id_field_name(layer)
         if self.id_field_name is None:
-            QMessageBox.warning(self, "Поля", "У слоя нет атрибутов.")
+            QMessageBox.warning(
+                self, tr("Fields"), tr("The layer has no attributes.")
+            )
             self.table.blockSignals(False)
             return
 
@@ -423,7 +481,9 @@ class ProfileChainageDialog(QDialog):
 
         self.table.blockSignals(False)
         if self.table.rowCount() == 0:
-            QMessageBox.information(self, "Данные", "В слое нет линейных объектов.")
+            QMessageBox.information(
+                self, tr("Data"), tr("The layer has no line features.")
+            )
         else:
             self._zoom_to_source_layer()
             self.refresh_map_preview()
@@ -500,12 +560,12 @@ class ProfileChainageDialog(QDialog):
         self.rubber_arrows.setWidth(3)
 
         id_layer = self._make_memory_point_layer(
-            "превью ID профилей",
+            tr("profile ID preview"),
             crs,
             [QgsField("profile_id", QVariant.String)],
         )
         marks_layer = self._make_memory_point_layer(
-            "превью разметки",
+            tr("mark preview"),
             crs,
             [
                 QgsField("profile_id", QVariant.String),
@@ -757,7 +817,9 @@ class ProfileChainageDialog(QDialog):
 
     def generate_points(self):
         if self.source_layer is None or self.table.rowCount() == 0:
-            QMessageBox.information(self, "Данные", "Сначала загрузите линии в таблицу.")
+            QMessageBox.information(
+                self, tr("Data"), tr("Load lines into the table first.")
+            )
             return
 
         crs = self.source_layer.crs()
@@ -787,8 +849,8 @@ class ProfileChainageDialog(QDialog):
             if step <= 0:
                 QMessageBox.warning(
                     self,
-                    "Шаг",
-                    f"У профиля {profile_id} шаг должен быть > 0.",
+                    tr("Step"),
+                    tr("Profile {id}: step must be greater than 0.", id=profile_id),
                 )
                 return
 
@@ -805,7 +867,9 @@ class ProfileChainageDialog(QDialog):
             all_features.extend(built)
 
         if not all_features:
-            QMessageBox.warning(self, "Результат", "Не удалось создать точки.")
+            QMessageBox.warning(
+                self, tr("Result"), tr("Could not create points.")
+            )
             return
 
         provider.addFeatures(all_features)
@@ -825,6 +889,9 @@ class ProfileChainageDialog(QDialog):
         self.iface.setActiveLayer(out_layer)
         QMessageBox.information(
             self,
-            "Готово",
-            f"Создан временный слой «profile_marks»: {len(all_features)} точек.",
+            tr("Done"),
+            tr(
+                "Temporary layer “profile_marks” created: {count} points.",
+                count=len(all_features),
+            ),
         )
