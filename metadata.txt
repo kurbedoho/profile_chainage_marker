@@ -3,8 +3,8 @@ name=Profile Chainage Marker
 qgisMinimumVersion=3.28
 qgisMaximumVersion=3.99
 description=Mark chainage points along profile lines with scaled labels, direction preview and optional bend points
-version=1.5.0
-releasedate=2026-10-18
+version=1.6.0
+releasedate=2026-10-19
 author=Kurbe
 email=vlad13a@gmail.com
 about=Creates chainage/stationing points along separate profile lines. Shows direction arrows on the map, allows reversing a profile for calculation only (source layer is not modified), and supports step, start mark and target mark length. Labels are scaled to the chosen mark length; the last point is always placed at the line end. Optional points at bends with the same scaled mark values. Output is a temporary point layer (profile_id, mark, seq) in the source CRS. Live preview of IDs and mark points is shown while editing parameters.
@@ -19,7 +19,8 @@ icon=icon.svg
 experimental=False
 deprecated=False
 supportsQt6=True
-changelog=1.5.0 - English UI + Russian; auto language from QGIS; AroundPoint labels
+changelog=1.6.0 - English UI + Russian; auto language from QGIS; AroundPoint labels
+    1.5.0 - Mark labels Below / AroundPoint; version+date in menu title
     1.4.11 - Center mark labels directly above points
     1.4.10 - Increase mark label distance so text clears the point symbol
     1.4.9 - Labels at top of point; point color matches source line
