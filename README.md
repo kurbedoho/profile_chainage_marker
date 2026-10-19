@@ -17,9 +17,9 @@ https://github.com/kurbedoho/profile_chainage_marker/releases/latest/download/pr
 2. В QGIS: **Модули → Управление и установка модулей → Установить из ZIP**.
 3. Выберите скачанный zip → **Установить**.
 4. Включите модуль **Profile Chainage Marker**.
-5. Меню **Vector → Profile Chainage Marker** (на русском QGIS — **Разметка профилей**).
+5. Меню **Vector → Profile Chainage Marker** (в русском QGIS — **Разметка профилей**).
 
-Язык интерфейса: по умолчанию как у QGIS (**Авто**). Можно выбрать English / Русский в окне плагина — выбор запоминается.
+Язык интерфейса берётся из языка QGIS: русский QGIS → русский UI, иначе английский.
 
 ### Способ 2 — вручную
 

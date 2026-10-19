@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""UI language: auto from QGIS locale, with remembered override."""
+"""UI language from QGIS locale: Russian if QGIS is Russian, else English."""
 
 from qgis.PyQt.QtCore import QSettings
 
@@ -8,9 +8,6 @@ try:
 except ImportError:  # pragma: no cover
     QgsSettings = None
     QgsApplication = None
-
-PLUGIN_SETTINGS_GROUP = "plugins/profile_chainage_marker"
-LANG_KEY = "language"  # auto | en | ru
 
 # English source -> Russian
 _RU = {
@@ -46,10 +43,6 @@ _RU = {
     ),
     "Create points": "Создать точки",
     "Close": "Закрыть",
-    "Language:": "Язык:",
-    "Auto (QGIS)": "Авто (QGIS)",
-    "English": "English",
-    "Russian": "Русский",
     "Fields": "Поля",
     "The layer has no attributes.": "У слоя нет атрибутов.",
     "Data": "Данные",
@@ -66,10 +59,6 @@ _RU = {
     ),
     "profile ID preview": "превью ID профилей",
     "mark preview": "превью разметки",
-}
-
-_TRANSLATIONS = {
-    "ru": _RU,
 }
 
 
@@ -100,40 +89,18 @@ def qgis_locale_code():
     return locale.lower() or "en"
 
 
-def get_language_preference():
-    """Stored preference: auto | en | ru."""
-    s = _settings()
-    value = s.value(f"{PLUGIN_SETTINGS_GROUP}/{LANG_KEY}", "auto", type=str)
-    value = (value or "auto").strip().lower()
-    if value in ("auto", "en", "ru"):
-        return value
-    return "auto"
-
-
-def set_language_preference(value: str):
-    value = (value or "auto").strip().lower()
-    if value not in ("auto", "en", "ru"):
-        value = "auto"
-    _settings().setValue(f"{PLUGIN_SETTINGS_GROUP}/{LANG_KEY}", value)
-
-
 def resolve_language():
-    """Effective UI language: en | ru."""
-    pref = get_language_preference()
-    if pref in ("en", "ru"):
-        return pref
-    code = qgis_locale_code()
-    if code.startswith("ru"):
+    """Russian only when QGIS UI is Russian; otherwise English."""
+    if qgis_locale_code().startswith("ru"):
         return "ru"
     return "en"
 
 
 def tr(text: str, **kwargs) -> str:
     """Translate English source string; optional format kwargs."""
-    lang = resolve_language()
     out = text
-    if lang != "en":
-        out = _TRANSLATIONS.get(lang, {}).get(text, text)
+    if resolve_language() == "ru":
+        out = _RU.get(text, text)
     if kwargs:
         return out.format(**kwargs)
     return out

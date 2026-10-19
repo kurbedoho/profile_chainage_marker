@@ -80,33 +80,10 @@ class ProfileChainageMarkerPlugin:
             self.iface.removeToolBarIcon(self.action)
             self.action = None
 
-    def refresh_titles(self):
-        """Update menu/toolbar/window titles after language change."""
-        if self.action is None:
-            return
-        old_title = self.menu_title
-        new_title = plugin_display_name(self.plugin_dir)
-        if old_title != new_title:
-            self.iface.removePluginVectorMenu(old_title, self.action)
-            self.menu_title = new_title
-            self.iface.addPluginToVectorMenu(self.menu_title, self.action)
-        else:
-            self.menu_title = new_title
-        self.action.setText(self.menu_title)
-        self.action.setToolTip(
-            f"{self.menu_title} — {tr('Mark chainage points along profile lines')}"
-        )
-        if self.dialog is not None:
-            self.dialog.setWindowTitle(self.menu_title)
-
     def run(self):
         if self.dialog is None:
-            self.dialog = ProfileChainageDialog(
-                self.iface,
-                self.iface.mainWindow(),
-                on_language_changed=self.refresh_titles,
-            )
-        self.refresh_titles()
+            self.dialog = ProfileChainageDialog(self.iface, self.iface.mainWindow())
+        self.dialog.setWindowTitle(self.menu_title)
         self.dialog.show()
         self.dialog.raise_()
         self.dialog.activateWindow()

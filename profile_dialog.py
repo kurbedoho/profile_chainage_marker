@@ -6,7 +6,6 @@ from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -43,7 +42,7 @@ from qgis.core import (
 from qgis.gui import QgsMapLayerComboBox, QgsRubberBand, QgsVertexMarker
 
 from .chainage import as_single_line, build_point_features, reversed_line
-from .i18n import get_language_preference, set_language_preference, tr
+from .i18n import tr
 
 
 COL_ID = 0
@@ -179,11 +178,10 @@ def _mark_label_settings():
 
 
 class ProfileChainageDialog(QDialog):
-    def __init__(self, iface, parent=None, on_language_changed=None):
+    def __init__(self, iface, parent=None):
         super().__init__(parent)
         self.iface = iface
         self.canvas = iface.mapCanvas()
-        self.on_language_changed = on_language_changed
         self.source_layer = None
         self.feature_by_row = {}
         self.id_field_name = None
@@ -221,15 +219,6 @@ class ProfileChainageDialog(QDialog):
         self.resize(900, 560)
 
         root = QVBoxLayout(self)
-
-        lang_row = QHBoxLayout()
-        self.lbl_language = QLabel()
-        self.combo_language = QComboBox()
-        self.combo_language.setMinimumWidth(160)
-        lang_row.addWidget(self.lbl_language)
-        lang_row.addWidget(self.combo_language)
-        lang_row.addStretch(1)
-        root.addLayout(lang_row)
 
         self.source_box = QGroupBox()
         source_layout = QHBoxLayout(self.source_box)
@@ -289,15 +278,13 @@ class ProfileChainageDialog(QDialog):
         self.layer_combo.layerChanged.connect(self.on_layer_changed)
         self.table.cellChanged.connect(self.on_cell_changed)
         self.chk_bends.toggled.connect(self.schedule_preview_refresh)
-        self.combo_language.currentIndexChanged.connect(self._on_language_changed)
 
         self.retranslate_ui()
         self._ui_ready = True
 
     def retranslate_ui(self):
-        """Apply current language to all dialog texts."""
+        """Apply QGIS locale language to all dialog texts."""
         self.setWindowTitle(tr("Profile Chainage Marker"))
-        self.lbl_language.setText(tr("Language:"))
         self.source_box.setTitle(tr("Source lines"))
         self.lbl_layer.setText(tr("Layer:"))
         self.defaults_box.setTitle(tr("Default parameters"))
@@ -330,28 +317,6 @@ class ProfileChainageDialog(QDialog):
         )
         self.btn_generate.setText(tr("Create points"))
         self.btn_close.setText(tr("Close"))
-
-        pref = get_language_preference()
-        codes = ["auto", "en", "ru"]
-        labels = [tr("Auto (QGIS)"), tr("English"), tr("Russian")]
-        self.combo_language.blockSignals(True)
-        self.combo_language.clear()
-        for code, label in zip(codes, labels):
-            self.combo_language.addItem(label, code)
-        idx = codes.index(pref) if pref in codes else 0
-        self.combo_language.setCurrentIndex(idx)
-        self.combo_language.blockSignals(False)
-
-    def _on_language_changed(self, _index):
-        if not self._ui_ready:
-            return
-        code = self.combo_language.currentData()
-        if code is None:
-            return
-        set_language_preference(str(code))
-        self.retranslate_ui()
-        if callable(self.on_language_changed):
-            self.on_language_changed()
 
     def schedule_preview_refresh(self):
         self._preview_timer.start()
